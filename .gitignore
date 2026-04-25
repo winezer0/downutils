@@ -1,2 +1,5 @@
 /.idea
 /downloads
+/bin
+/cmd/downfile/downloads
+*.exe
