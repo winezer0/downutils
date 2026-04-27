@@ -85,6 +85,33 @@ func getItemFilePath(filename, downloadDir string) string {
 	return storePath
 }
 
+// GetDownItemFinalPath 获取文件的最终存储路径
+func GetDownItemFinalPath(filename, storageDir, outputForce string) string {
+	// 确定最终存储目录
+	var outputDir string
+	if outputForce != "" {
+		outputDir = outputForce
+	} else if storageDir != "" {
+		outputDir = storageDir
+	} else {
+		outputDir = "." //设置默认下载到当前目录下
+	}
+
+	// 组合最终文件路径
+	storePath := getItemFilePath(filename, outputDir)
+	return storePath
+}
+
+// GetModuleFinalPath 根据模块名获取数据库的最终存储路径
+func GetModuleFinalPath(module string, downItems []DownItem, outputForce string) string {
+	for _, db := range downItems {
+		if db.Module == module {
+			return GetDownItemFinalPath(db.FileName, db.StorageDir, outputForce)
+		}
+	}
+	return ""
+}
+
 // filterEnableItems 仅保留 enable=true 的配置项
 func filterEnableItems(items []DownItem) []DownItem {
 	var enabledItems []DownItem

@@ -18,18 +18,7 @@ func CheckDuplicatePaths(config DownConfig, outputForce string) {
 
 	for groupName, items := range config {
 		for _, item := range items {
-			// 确定最终存储目录
-			var outputDir string
-			if outputForce != "" {
-				outputDir = outputForce
-			} else if item.StorageDir != "" {
-				outputDir = item.StorageDir
-			} else {
-				continue
-			}
-
-			// 组合最终文件路径
-			storePath := getItemFilePath(item.FileName, outputDir)
+			storePath := GetDownItemFinalPath(item.FileName, item.StorageDir, outputForce)
 
 			// 检查是否已存在相同路径
 			if existingModule, exists := pathMap[storePath]; exists {

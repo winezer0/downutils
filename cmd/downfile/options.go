@@ -13,7 +13,7 @@ const (
 	AppName      = "downfile"
 	AppShortDesc = "ISEC 依赖文件这下载工具"
 	AppLongDesc  = "ISEC 依赖文件这下载工具 根据配置文件进行文件下载"
-	AppVersion   = "0.0.1"
+	AppVersion   = "0.0.2"
 	BuildDate    = "2026-04-27"
 )
 
