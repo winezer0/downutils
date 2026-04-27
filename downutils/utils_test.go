@@ -125,10 +125,10 @@ func TestGetItemFilePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getItemFilePath(tt.filename, tt.downloadDir)
+			result := joinItemFilePath(tt.filename, tt.downloadDir)
 			// Only verify result contains filename and directory
 			if result == "" {
-				t.Errorf("getItemFilePath(%s, %s) returned empty string", tt.filename, tt.downloadDir)
+				t.Errorf("joinItemFilePath(%s, %s) returned empty string", tt.filename, tt.downloadDir)
 			}
 		})
 	}

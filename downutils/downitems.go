@@ -85,23 +85,7 @@ func ProcessDownItems(client *http.Client, items []DownItem, downOptions *DownOp
 // processSingleItem 处理单个下载项
 func processSingleItem(client *http.Client, item DownItem, downOptions *DownOptions) TaskInfo {
 	// 确定最终存储目录，优先级：OutputForce > StorageDir
-	var outputDir string
-	if downOptions.OutputForce != "" {
-		outputDir = downOptions.OutputForce
-	} else if item.StorageDir != "" {
-		outputDir = item.StorageDir
-	} else {
-		logging.Errorf("no storage directory configured for %s, please set StorageDir or OutputForce", item.Module)
-		return TaskInfo{
-			Module:   item.Module,
-			FileName: item.FileName,
-			Status:   TaskStatusConfigErr,
-			ErrorMsg: "no storage directory configured",
-		}
-	}
-
-	// 组合最终文件路径
-	storePath := getItemFilePath(item.FileName, outputDir)
+	storePath := GetDownItemFinalPath(item.FileName, item.StorageDir, downOptions.OutputForce)
 
 	// 检查文件是否存在
 	fileExists := fileExists(storePath)

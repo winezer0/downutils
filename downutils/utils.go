@@ -76,8 +76,8 @@ func makeDirs(path string, isFile bool) error {
 	return err
 }
 
-// getItemFilePath 获取文件存储路径
-func getItemFilePath(filename, downloadDir string) string {
+// joinItemFilePath 获取文件存储路径
+func joinItemFilePath(filename, downloadDir string) string {
 	storePath := filename
 	if !filepath.IsAbs(filename) {
 		storePath = filepath.Join(downloadDir, filename)
@@ -98,7 +98,7 @@ func GetDownItemFinalPath(filename, storageDir, outputForce string) string {
 	}
 
 	// 组合最终文件路径
-	storePath := getItemFilePath(filename, outputDir)
+	storePath := joinItemFilePath(filename, outputDir)
 	return storePath
 }
 
