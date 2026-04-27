@@ -1,0 +1,35 @@
+# 下载总配置（DownConfig: map[string][]DownItem）
+# key = 任务分组名，value = 该组下的所有下载任务
+default:
+  - module: "nginx_config"
+    filename: "nginx.conf"
+    download-urls:
+      - "https://example.com/nginx.conf"
+      - "https://backup.example.com/nginx.conf"
+    keep-updated: "enable"       # 总是更新
+    storage-dir: "./configs"     # 存储到当前目录下的 configs
+    enable: true                 # 开启任务
+    checksum: "md5:abc123def456789"
+    check-size: "10KB"
+
+  - module: "app_binary"
+    filename: "app-linux-amd64"
+    download-urls:
+      - "https://example.com/app-linux"
+    keep-updated: "24h"          # 24小时后自动更新
+    storage-dir: "./bin"
+    enable: true
+    checksum: "sha256:xyz78900000"
+    check-size: "25MB"
+
+# 第二个任务分组
+tools:
+  - module: "7zip"
+    filename: "7z.exe"
+    download-urls:
+      - "https://example.com/7z.exe"
+    keep-updated: "disable"       # 不更新
+    storage-dir: "./tools"
+    enable: false                 # 关闭此任务
+    checksum: ""
+    check-size: ""
