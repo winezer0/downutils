@@ -2,6 +2,7 @@ package downutils
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
@@ -25,8 +26,9 @@ func newDownloadProgress(total int64, fileName string, throttle time.Duration, e
 		progressbar.OptionSetWidth(15),
 		progressbar.OptionThrottle(throttle),
 		progressbar.OptionShowIts(),
-		progressbar.OptionOnCompletion(func() { fmt.Println() }),
-		progressbar.OptionSpinnerType(14),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionOnCompletion(func() { fmt.Fprintln(os.Stderr) }),
+		progressbar.OptionSpinnerCustom([]string{"|", "/", "-", "\\"}),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionSetTheme(progressbar.Theme{
 			Saucer: "=", SaucerHead: ">", SaucerPadding: " ", BarStart: "[", BarEnd: "]",

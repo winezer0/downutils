@@ -11,33 +11,35 @@ import (
 // 版本信息常量(根据实际情况修改)
 const (
 	AppName      = "downfile"
-	AppShortDesc = "ISEC 依赖文件这下载工具"
-	AppLongDesc  = "ISEC 依赖文件这下载工具 根据配置文件进行文件下载"
+	AppShortDesc = "ISEC dependency downloader"
+	AppLongDesc  = "Download dependency files from a YAML configuration."
 	AppVersion   = "0.0.3"
 	BuildDate    = "2026-04-27"
 )
 
 // Options 应用配置结构体
 type Options struct {
-	ConfigFile string `short:"c" long:"config" description:"配置文件路径" default:"config.yaml"`
+	ConfigFile string `short:"c" long:"config" description:"Configuration file path" default:"config.yaml"`
 
-	OutputForce string `short:"o" long:"output" description:"强制保存目录 忽略配置文件中的 storage-dir 配置" default:"downloads"`
-	UpdateForce bool   `short:"u" long:"update" description:"强制启用更新 忽略配置文件中的 keep-updated 策略"`
-	EnableForce bool   `short:"e" long:"enable" description:"强制启用所有下载项 忽略配置文件中 enable 策略"`
-	NoProgress  bool   `short:"q" long:"no-bar" description:"不显示下载进度条"`
+	OutputForce   string `short:"o" long:"output" description:"Override configured storage directories" default:"downloads"`
+	UpdateForce   bool   `short:"u" long:"update" description:"Force updates regardless of keep-updated policy"`
+	EnableForce   bool   `short:"e" long:"enable" description:"Enable all configured download items"`
+	NoProgress    bool   `short:"q" long:"no-bar" description:"Disable progress display"`
+	DisableResume bool   `long:"disable-resume" description:"Restart each attempt without resuming partial data"`
 
-	ProxyURL string `short:"p" long:"proxy" description:"代理URL 支持http://和socks5://格式" default:""`
+	ProxyURL string `short:"p" long:"proxy" description:"Proxy URL (http:// or socks5://)" default:""`
 
-	MaxConcurrent  int   `short:"C" long:"concurrent" description:"最大并发下载数" default:"1"`
-	MaxSpeed       int64 `short:"S" long:"max-speed" description:"最大下载速度(字节/秒，0表示不限速)" default:"0"`
-	ConnectTimeout int   `short:"t" long:"connect-timeout" description:"连接超时时间(秒)" default:"10"`
-	IdleTimeout    int   `short:"T" long:"idle-timeout" description:"空闲超时时间(秒)" default:"60"`
-	Retries        int   `short:"r" long:"retries" description:"下载失败重试次数" default:"3"`
+	MaxConcurrent   int   `short:"C" long:"concurrent" description:"Maximum concurrent downloads (at least 1)" default:"1"`
+	MaxSpeed        int64 `short:"S" long:"max-speed" description:"Bytes per second per download (0: unlimited)" default:"0"`
+	ConnectTimeout  int   `short:"t" long:"connect-timeout" description:"Connection and response-header timeout in seconds" default:"10"`
+	IdleTimeout     int   `short:"T" long:"idle-timeout" description:"Legacy total timeout per attempt and idle connection timeout in seconds" default:"60"`
+	ReadIdleTimeout int   `long:"read-idle-timeout" description:"Response-body read idle timeout in seconds (0: disabled)" default:"0"`
+	Retries         int   `short:"r" long:"retries" description:"Maximum attempts per URL, including the first attempt" default:"3"`
 
-	Version       bool   `short:"v" long:"version" description:"显示版本信息"`
-	LogFile       string `long:"lf" description:"日志文件路径(默认：空)" default:""`
-	LogLevel      string `long:"ll" description:"日志级别(debug/info/warn/error)" default:"info"`
-	ConsoleFormat string `long:"cf" description:"控制台日志格式(T L C M F组合或off|null禁用)" default:"M"`
+	Version       bool   `short:"v" long:"version" description:"Show version information"`
+	LogFile       string `long:"lf" description:"Optional log file path" default:""`
+	LogLevel      string `long:"ll" description:"Log level (debug/info/warn/error)" default:"info"`
+	ConsoleFormat string `long:"cf" description:"Console fields (T L C M F; off|null: disabled)" default:"M"`
 }
 
 // InitOptionsArgs 常用的工具函数，解析parser和logging配置
@@ -61,7 +63,7 @@ func InitOptionsArgs(minimumParams int) (*Options, *flags.Parser) {
 		if errors.As(err, &flagsErr) && errors.Is(flagsErr.Type, flags.ErrHelp) {
 			os.Exit(0)
 		}
-		fmt.Printf("Error:%v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -75,17 +77,13 @@ func InitOptionsArgs(minimumParams int) (*Options, *flags.Parser) {
 	// 初始化日志器
 	logCfg := slogs.NewConfig(opts.LogLevel, opts.LogFile, opts.ConsoleFormat)
 	if err := slogs.Init(logCfg); err != nil {
-		fmt.Printf("Failed to initialize logger: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
 
 	if opts.ConfigFile == "" {
-		slogs.Errorf("config file path is empty")
+		fmt.Fprintln(os.Stderr, "Config file path is empty")
 		os.Exit(1)
-	}
-
-	if !fileExists(opts.ConfigFile) {
-		slogs.Errorf("config file not found: %s", opts.ConfigFile)
 	}
 
 	return opts, parser
@@ -105,8 +103,9 @@ func displayOptions(options *Options) {
 	}
 	slogs.Infof("Download Proxy: %s", options.ProxyURL)
 	slogs.Infof("Connect timeout: %ds", options.ConnectTimeout)
-	slogs.Infof("Idle timeout: %ds", options.IdleTimeout)
-	slogs.Infof("Retries: %d", options.Retries)
+	slogs.Infof("Attempt timeout (legacy): %ds", options.IdleTimeout)
+	slogs.Infof("Read idle timeout: %ds (0: disabled)", options.ReadIdleTimeout)
+	slogs.Infof("Maximum attempts per URL: %d", options.Retries)
 	slogs.Infof("Max concurrent: %d", options.MaxConcurrent)
 	if options.MaxSpeed > 0 {
 		slogs.Infof("Max speed: %d bytes/s", options.MaxSpeed)

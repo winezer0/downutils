@@ -22,6 +22,8 @@ These commands use Unix-style options. On Windows, go-flags help uses `/option:v
 | `-u, --update` | `false` | Force updates |
 | `-e, --enable` | `false` | Enable all items |
 | `-q, --no-bar` | `false` | Hide progress bars |
+| `--disable-resume` | `false` | Restart each attempt from the beginning |
+| `--read-idle-timeout` | `0` | Response-body read idle timeout in seconds; 0 disables it; excludes throttling |
 | `-p, --proxy` | Empty | HTTP/SOCKS5 proxy; otherwise use environment proxies |
 | `-C, --concurrent` | `1` | Maximum concurrent downloads within each group |
 | `-S, --max-speed` | `0` | Per-download bytes/second limit; 0 means unlimited |
@@ -33,7 +35,7 @@ These commands use Unix-style options. On Windows, go-flags help uses `/option:v
 | `--cf` | `M` | Console format: `text`, `json`, a mask such as `TLCM`, or `off` |
 | `-v, --version` | `false` | Display the version |
 
-The CLI defaults to the `downloads` output directory and a 10-second connection timeout. Library defaults use an empty output override and a 30-second connection timeout. The CLI does not currently expose `DisableResume`.
+The CLI defaults to the `downloads` output directory and a 10-second connection timeout. Library defaults use an empty output override and a 30-second connection timeout. Legacy timeout and total-attempt behavior remains compatible.
 
 ## Configuration
 
@@ -53,7 +55,7 @@ downfile --config config.yaml --ll debug --lf download.log --cf json
 
 Temporary `.download` files can be reused during retries within one batch. The batch entry point cleans these files before and after execution, so resume across CLI invocations is not guaranteed. Use a dedicated download directory; see [resume and temporary files](../../README.en.md#resume-and-temporary-files).
 
-The CLI logs a summary and per-task results. Individual task failures do not currently force a nonzero exit status; inspect the logged results rather than relying only on the process exit status.
+The CLI logs a summary and per-task results. Exit codes are 0 for success or all skipped, 1 for configuration errors or any failed task, and 130 for interruption. Error summaries go to stderr; slogs logging remains on stdout. Help and runtime messages use English. Progress uses ASCII characters on stderr and is disabled when redirected or TERM=dumb.
 
 ## Dependencies
 

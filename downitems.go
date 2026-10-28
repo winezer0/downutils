@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +40,18 @@ func processDownItems(ctx context.Context, client *http.Client, items []DownItem
 	if downOptions == nil {
 		downOptions = NewDefaultDownOptions()
 	}
+	if err := validateDownloadOptions(downOptions); err != nil || client == nil {
+		message := "HTTP client must not be nil"
+		if err != nil {
+			message = err.Error()
+		}
+		results := make([]TaskInfo, len(items))
+		for i, item := range items {
+			results[i] = cancelledTask(item, downOptions, message)
+			results[i].Status = TaskStatusConfigErr
+		}
+		return results
+	}
 
 	// 预分配切片容量，避免多次扩容
 	taskInfos := make([]TaskInfo, 0, len(items))
@@ -62,9 +73,23 @@ func processDownItems(ctx context.Context, client *http.Client, items []DownItem
 		results = make([]TaskInfo, len(items))
 	)
 
+scheduling:
 	for i, item := range items {
+		if ctx.Err() != nil {
+			for j := i; j < len(items); j++ {
+				results[j] = cancelledTask(items[j], downOptions, ctx.Err().Error())
+			}
+			break
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			for j := i; j < len(items); j++ {
+				results[j] = cancelledTask(items[j], downOptions, ctx.Err().Error())
+			}
+			break scheduling
+		}
 		wg.Add(1)
-		sem <- struct{}{} // 获取信号量
 
 		go func(idx int, it DownItem) {
 			defer wg.Done()
@@ -89,6 +114,9 @@ func processDownItems(ctx context.Context, client *http.Client, items []DownItem
 
 // processSingleItem 处理单个下载项
 func processSingleItem(parentCtx context.Context, client *http.Client, item DownItem, downOptions *DownOptions) TaskInfo {
+	if parentCtx.Err() != nil {
+		return cancelledTask(item, downOptions, parentCtx.Err().Error())
+	}
 	// 确定最终存储目录，优先级：OutputForce > StorageDir
 	storePath := GetDownItemFinalPath(item.FileName, item.StorageDir, downOptions.OutputForce)
 
@@ -145,6 +173,9 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 	// 尝试从每个URL下载
 	for _, url := range item.DownloadURLs {
+		if parentCtx.Err() != nil {
+			return cancelledTask(item, downOptions, parentCtx.Err().Error())
+		}
 		// 处理GitHub URL
 		downloadURL := url
 		if strings.Contains(url, "github.com") && strings.Contains(url, "/blob/") {
@@ -158,6 +189,9 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 		// 尝试下载，支持重试
 	retryLoop:
 		for attempt := 1; attempt <= downOptions.MaxRetries; attempt++ {
+			if parentCtx.Err() != nil {
+				return cancelledTask(item, downOptions, parentCtx.Err().Error())
+			}
 			if attempt > 1 {
 				slogs.Infof("retry %d downloading...", attempt)
 			} else {
@@ -169,19 +203,21 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 			// 执行下载
 			taskConfig := &DownloadTaskConfig{
-				DisableResume: downOptions.DisableResume,
-				Checksum:      item.Checksum,
-				CheckSize:     item.CheckSize,
-				MaxSize:       item.MaxSize,
-				ShowProgress:  downOptions.ShowProgress,
-				MaxSpeed:      downOptions.MaxSpeed,
+				ReadIdleTimeout: downOptions.ReadIdleTimeout,
+				DisableResume:   downOptions.DisableResume,
+				Checksum:        item.Checksum,
+				CheckSize:       item.CheckSize,
+				MaxSize:         item.MaxSize,
+				ShowProgress:    downOptions.ShowProgress,
+				MaxSpeed:        downOptions.MaxSpeed,
 			}
 			if err := downloadFile(ctx, client, downloadURL, storePath, taskConfig); err != nil {
 				cancel()
 
 				// 对错误进行分类
 				var downloadErr DownloadError
-				slogs.Errorf("download failed: %v", err)
+				taskInfo.ErrorMsg = err.Error()
+				slogs.Warnf("attempt %d/%d failed for %s: %v", attempt, downOptions.MaxRetries, item.Module, err)
 
 				if errors.As(err, &downloadErr) {
 					switch downloadErr.Type {
@@ -192,27 +228,21 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 						break retryLoop
 
 					case ErrDownloadCancelled:
-						slogs.Warnf("download cancelled: %v", err)
-						taskInfo.ErrorMsg = fmt.Sprintf("download cancelled: %v", err)
-						break retryLoop
+						return taskInfo
 
 					case ErrTimeout:
 						slogs.Warnf("timeout error for URL: %s", downloadURL)
-						taskInfo.ErrorMsg = fmt.Sprintf("timeout error: %v", err)
 
 					case ErrNetworkError:
 						slogs.Warnf("network error for URL: %s", downloadURL)
-						taskInfo.ErrorMsg = fmt.Sprintf("network error: %v", err)
 
 					case ErrDiskFull:
 						slogs.Errorf("disk full, cannot download to %s", storePath)
-						taskInfo.ErrorMsg = fmt.Sprintf("disk full: %v", err)
 						allUrlsNotFound = false
 						break retryLoop
 
 					case ErrPermissionDenied:
 						slogs.Errorf("permission denied for path: %s", storePath)
-						taskInfo.ErrorMsg = fmt.Sprintf("permission denied: %v", err)
 						allUrlsNotFound = false
 						break retryLoop
 
@@ -223,14 +253,10 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 					case ErrChecksumMismatch:
 						slogs.Warnf("checksum/size verification failed for URL: %s", downloadURL)
-						taskInfo.ErrorMsg = fmt.Sprintf("verification failed: %v", err)
 
 					default:
 						slogs.Warnf("unknown error type: %s", downloadErr.Type)
-						taskInfo.ErrorMsg = fmt.Sprintf("unknown error: %v", err)
 					}
-				} else {
-					taskInfo.ErrorMsg = fmt.Sprintf("download failed: %v", err)
 				}
 
 				// 如果不是最后一次尝试，则等待后重试
@@ -254,7 +280,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 				taskInfo.Status = TaskStatusSuccess
 				taskInfo.DownloadURL = downloadURL
 				taskInfo.ErrorMsg = ""
-				taskInfo.Resumed = checkFileExistsForResume(storePath, downloadURL)
+				taskInfo.Resumed = taskConfig.resumed
 				success = true
 				allUrlsNotFound = false
 				break retryLoop
@@ -287,14 +313,8 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 	return taskInfo
 }
 
-// checkFileExistsForResume 检查文件是否存在(用于判断是否断点续传)
-func checkFileExistsForResume(storePath string, downloadUrl string) bool {
-	existingTempFile := findIncompleteTempFile(storePath, downloadUrl)
-	if existingTempFile != "" {
-		info, statErr := os.Stat(existingTempFile)
-		if statErr == nil && info.Size() > 0 {
-			return true
-		}
-	}
-	return false
+func cancelledTask(item DownItem, options *DownOptions, message string) TaskInfo {
+	return TaskInfo{Module: item.Module, FileName: item.FileName,
+		StoragePath: GetDownItemFinalPath(item.FileName, item.StorageDir, options.OutputForce),
+		Status:      TaskStatusFailed, ErrorMsg: message}
 }

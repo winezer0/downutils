@@ -1,6 +1,7 @@
 package downutils
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -65,13 +66,23 @@ func (rl *RateLimiter) Wait(bytes int64) time.Duration {
 
 // LimitReader 包装io.Reader，在读取时应用速率限制
 type LimitReader struct {
+	ctx     context.Context
 	reader  interface{ Read([]byte) (int, error) }
 	limiter *RateLimiter
 }
 
 // NewLimitReader 创建限速读取器
 func NewLimitReader(reader interface{ Read([]byte) (int, error) }, rate int64) *LimitReader {
+	return NewLimitReaderContext(context.Background(), reader, rate)
+}
+
+// NewLimitReaderContext makes rate-limit waits cancellable.
+func NewLimitReaderContext(ctx context.Context, reader interface{ Read([]byte) (int, error) }, rate int64) *LimitReader {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &LimitReader{
+		ctx:     ctx,
 		reader:  reader,
 		limiter: NewRateLimiter(rate),
 	}
@@ -79,11 +90,24 @@ func NewLimitReader(reader interface{ Read([]byte) (int, error) }, rate int64) *
 
 // Read 读取数据并应用速率限制
 func (lr *LimitReader) Read(p []byte) (n int, err error) {
+	if lr.ctx != nil && lr.ctx.Err() != nil {
+		return 0, lr.ctx.Err()
+	}
 	n, err = lr.reader.Read(p)
 	if n > 0 && lr.limiter != nil {
 		waitDuration := lr.limiter.Wait(int64(n))
 		if waitDuration > 0 {
-			time.Sleep(waitDuration)
+			timer := time.NewTimer(waitDuration)
+			defer timer.Stop()
+			ctx := lr.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				return n, ctx.Err()
+			}
 		}
 	}
 	return n, err

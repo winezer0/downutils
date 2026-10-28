@@ -22,6 +22,8 @@ downfile --help
 | `-u, --update` | `false` | 强制更新 |
 | `-e, --enable` | `false` | 启用所有任务 |
 | `-q, --no-bar` | `false` | 隐藏进度条 |
+| `--disable-resume` | `false` | 每次尝试从头下载 |
+| `--read-idle-timeout` | `0` | 等待响应体数据的空闲超时（秒），0 关闭；不计限速等待 |
 | `-p, --proxy` | 空 | HTTP/SOCKS5 代理；未设置时使用环境代理 |
 | `-C, --concurrent` | `1` | 每个配置组的最大并发下载数 |
 | `-S, --max-speed` | `0` | 每个下载的速度上限（字节/秒），0 不限速 |
@@ -33,7 +35,7 @@ downfile --help
 | `--cf` | `M` | 控制台格式：`text`、`json`、`TLCM` 等掩码或 `off` |
 | `-v, --version` | `false` | 显示版本 |
 
-CLI 的默认输出目录是 `downloads`、连接超时是 10 秒；库的默认输出目录为空、连接超时是 30 秒。CLI 尚未提供 `DisableResume` 参数。
+CLI 的默认输出目录是 `downloads`、连接超时是 10 秒；库的默认输出目录为空、连接超时是 30 秒。原有超时和总尝试次数的参数行为保持兼容。
 
 ## 配置文件
 
@@ -53,7 +55,7 @@ downfile --config config.yaml --ll debug --lf download.log --cf json
 
 同一批次重试可复用 `.download` 临时文件。批量入口在执行前后会清理这些文件，因此不保证跨次运行 CLI 时续传。建议使用专用下载目录，详情见[续传与临时文件](../../README.md#续传与临时文件)。
 
-CLI 会记录汇总和逐项结果。当前单项任务失败不会强制返回非零退出码，应检查结果日志，而不能只依赖进程退出码判断全部任务是否成功。
+CLI 记录汇总和逐项结果：成功或全部跳过返回 0，配置错误或任一任务失败返回 1，用户中断返回 130。错误摘要写入 stderr；slogs 日志保持 stdout 输出。帮助和运行时提示使用英文。进度显示使用 ASCII 字符并写入 stderr，重定向或 TERM=dumb 时自动关闭。
 
 ## 依赖
 

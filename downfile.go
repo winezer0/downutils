@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/schollz/progressbar/v3"
 
@@ -87,6 +88,9 @@ func classifyError(err error, statusCode int) error {
 
 // downloadFile 下载文件，支持context取消、进度条显示和断点续传
 func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePath string, taskConfig *DownloadTaskConfig) error {
+	ctx, cancelRead := context.WithCancelCause(ctx)
+	defer cancelRead(nil)
+	taskConfig.resumed = false
 	// 创建目标文件的目录(如果不存在)
 	if err := os.MkdirAll(filepath.Dir(storePath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -107,6 +111,9 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 			slogs.Infof("found incomplete file %s, resuming download from %d bytes", existingTempFile, info.Size())
 			downloadedBytes = info.Size()
 			outFile, err = os.OpenFile(existingTempFile, os.O_APPEND|os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to open partial file: %w", err)
+			}
 			tempFile = existingTempFile
 		}
 	}
@@ -142,7 +149,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	resp, actualDownloadedBytes, err := downloadWithResumeFallback(ctx, client, downloadUrl, downloadedBytes)
 	if err != nil {
 		if ctx.Err() != nil {
-			return classifyError(ctx.Err(), 0)
+			return classifyError(context.Cause(ctx), 0)
 		}
 		return err
 	}
@@ -153,6 +160,9 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 		}
 	}
 	defer resp.Body.Close()
+	if taskConfig.ReadIdleTimeout > 0 {
+		resp.Body = &idleReadCloser{ReadCloser: resp.Body, timeout: time.Duration(taskConfig.ReadIdleTimeout) * time.Second, cancel: cancelRead}
+	}
 
 	// 如果发生了降级(从断点续传降级为完整下载)，需要重置文件
 	if actualDownloadedBytes != downloadedBytes {
@@ -163,6 +173,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 		}
 		outFile, err = os.Create(tempFile)
 		if err != nil {
+			fileClosed = true
 			return fmt.Errorf("failed to recreate temp file for full download: %w", err)
 		}
 		fileClosed = false
@@ -194,7 +205,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	// 根据showProgress选项和文件大小决定使用何种进度显示
 	var writer io.Writer = outFile
 	var barWrapper *progressbar.ProgressBar
-	if taskConfig.ShowProgress {
+	if taskConfig.ShowProgress && terminalProgressAvailable() {
 		if fileSize > 0 {
 			// 文件大小已知，使用字节进度条
 			barWrapper = createProgressBar(fileSize, fileName)
@@ -204,12 +215,19 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 			barWrapper = createSpinner(fileName)
 			writer = io.MultiWriter(outFile, barWrapper)
 		}
+		defer func() {
+			if downloadSuccess {
+				_ = barWrapper.Finish()
+			} else {
+				_ = barWrapper.Clear()
+			}
+		}()
 	}
 
 	// 应用下载速度限制
 	var reader io.Reader = resp.Body
 	if taskConfig.MaxSpeed > 0 {
-		reader = NewLimitReader(resp.Body, taskConfig.MaxSpeed)
+		reader = NewLimitReaderContext(ctx, resp.Body, taskConfig.MaxSpeed)
 	}
 	if taskConfig.MaxSize > 0 {
 		reader = io.LimitReader(reader, taskConfig.MaxSize-downloadedBytes+1)
@@ -221,7 +239,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 
 	// 检查是否是因为context取消导致的错误
 	if ctx.Err() != nil {
-		return classifyError(ctx.Err(), 0)
+		return classifyError(context.Cause(ctx), 0)
 	}
 
 	// 检查其他错误
@@ -232,36 +250,16 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 		return DownloadError{Message: fmt.Sprintf("download size exceeds maximum of %d bytes", taskConfig.MaxSize), Type: ErrMaximumSizeExceeded}
 	}
 
-	// 关闭进度条(触发换行)
-	if barWrapper != nil {
-		barWrapper.Finish()
-	}
-
 	// 关闭文件，确保内容写入磁盘
 	if err := outFile.Close(); err != nil {
 		return fmt.Errorf("failed to close file: %w", err)
 	}
 	fileClosed = true
 
-	// 标记下载成功，避免在defer中删除临时文件
-	downloadSuccess = true
-
-	// 删除旧文件(如果存在)
-	if fileExists(storePath) {
-		if err := os.Remove(storePath); err != nil {
-			return fmt.Errorf("error: failed to delete old file: %w", err)
-		}
-	}
-
-	// 重命名临时文件为最终文件名
-	if err := os.Rename(tempFile, storePath); err != nil {
-		return fmt.Errorf("error: failed to rename temp file: %w", err)
-	}
-
 	// 验证文件大小(如果配置了)
 	parsedSize := parseCheckSize(taskConfig.CheckSize)
 	if parsedSize.Enable {
-		match, actualSize, verifyErr := verifyFileSize(storePath, parsedSize)
+		match, actualSize, verifyErr := verifyFileSize(tempFile, parsedSize)
 		if verifyErr != nil {
 			return fmt.Errorf("file size verification failed: %w", verifyErr)
 		}
@@ -277,7 +275,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	// 验证文件校验值(如果配置了)
 	parsedChecksum := parseChecksum(taskConfig.Checksum)
 	if parsedChecksum.Enable {
-		match, actual, verifyErr := verifyFileChecksum(storePath, parsedChecksum)
+		match, actual, verifyErr := verifyFileChecksum(tempFile, parsedChecksum)
 		if verifyErr != nil {
 			return fmt.Errorf("checksum verification failed: %w", verifyErr)
 		}
@@ -291,6 +289,14 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 		slogs.Infof("file checksum verification passed: %s:%s", parsedChecksum.Type, actual)
 	}
 
+	if ctx.Err() != nil {
+		return classifyError(context.Cause(ctx), 0)
+	}
+	if err := replaceFile(tempFile, storePath); err != nil {
+		return fmt.Errorf("failed to replace target file: %w", err)
+	}
+	downloadSuccess = true
+	taskConfig.resumed = actualDownloadedBytes > 0
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/winezer0/slogs"
 )
@@ -69,28 +70,7 @@ func ExecuteDownloadsContext(ctx context.Context, options *DownOptions, downConf
 	}
 	defer httpClient.CloseIdleConnections()
 
-	// 验证配置
-	validationErrs := ValidateDownConfig(downConfig, options.EnableForce)
-	if len(validationErrs) > 0 {
-		for _, errMsg := range validationErrs {
-			slogs.Errorf("config validation failed: %s", errMsg)
-		}
-		return nil, fmt.Errorf("config validation failed with %d errors", len(validationErrs))
-	}
-
-	// 检查重复保存路径
-	CheckDuplicatePaths(downConfig, options.OutputForce)
-
-	// 下载前清理所有配置目录中的临时文件
-	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
-
-	// 处理所有配置组
-	result := processAllConfigGroups(ctx, httpClient, downConfig, options)
-
-	// 下载后再次清理未完成的下载文件
-	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
-
-	return result, nil
+	return ExecuteDownloadsWithClientContext(ctx, options, downConfig, httpClient)
 }
 
 // ExecuteDownloadsWithClient 使用已有的HTTP客户端执行下载流程
@@ -107,6 +87,16 @@ func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions
 	if options == nil {
 		options = NewDefaultDownOptions()
 	}
+	if httpClient == nil {
+		return nil, fmt.Errorf("HTTP client must not be nil")
+	}
+	if err := validateDownloadOptions(options); err != nil {
+		return nil, err
+	}
+	if errs := ValidateDownConfig(downConfig, options.EnableForce); len(errs) > 0 {
+		return nil, fmt.Errorf("config validation failed: %s", strings.Join(errs, "; "))
+	}
+	CheckDuplicatePaths(downConfig, options.OutputForce)
 
 	// 下载前清理所有配置目录中的临时文件
 	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
@@ -118,6 +108,22 @@ func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions
 	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
 
 	return result, nil
+}
+
+func validateDownloadOptions(options *DownOptions) error {
+	if options.MaxRetries < 1 {
+		return fmt.Errorf("maximum attempts must be at least 1")
+	}
+	if options.MaxConcurrent < 0 {
+		return fmt.Errorf("maximum concurrency must not be negative (0 means serial)")
+	}
+	if options.MaxSpeed < 0 {
+		return fmt.Errorf("maximum speed must not be negative")
+	}
+	if options.ConnectTimeout < 0 || options.IdleTimeout < 0 || options.ReadIdleTimeout < 0 {
+		return fmt.Errorf("timeouts must not be negative")
+	}
+	return nil
 }
 
 // processAllConfigGroups 处理所有配置组的下载任务

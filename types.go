@@ -27,17 +27,18 @@ type DownItem struct {
 
 // DownOptions 下载配置选项，调用方传递额外的下载参数
 type DownOptions struct {
-	DisableResume  bool   // Restart each attempt for mutable download URLs.
-	OutputForce    string // 强制保存目录：不为空时优先级最高，始终使用此目录保存文件
-	UpdateForce    bool   // 强制更新：为 true 时忽略 KeepUpdated 策略，强制重新下载
-	EnableForce    bool   // 强制启用：为 true 时忽略 Enable 字段，强制下载所有任务
-	ShowProgress   bool   // 显示进度条：为 true 时显示下载进度，默认显示
-	MaxRetries     int    // 下载错误 最大重试次数
-	MaxConcurrent  int    // 最大并发下载数，默认为1(串行下载)
-	MaxSpeed       int64  // 最大下载速度(字节/秒)，0表示不限速
-	ConnectTimeout int    // HTTP 连接超时(秒)
-	IdleTimeout    int    // HTTP 空闲超时(秒)
-	ProxyURL       string // HTTP 代理URL
+	ReadIdleTimeout int    // Seconds without response-body data; zero disables this independent timeout.
+	DisableResume   bool   // Restart each attempt for mutable download URLs.
+	OutputForce     string // 强制保存目录：不为空时优先级最高，始终使用此目录保存文件
+	UpdateForce     bool   // 强制更新：为 true 时忽略 KeepUpdated 策略，强制重新下载
+	EnableForce     bool   // 强制启用：为 true 时忽略 Enable 字段，强制下载所有任务
+	ShowProgress    bool   // 显示进度条：为 true 时显示下载进度，默认显示
+	MaxRetries      int    // Maximum attempts per URL, including the initial attempt (legacy name).
+	MaxConcurrent   int    // 最大并发下载数，默认为1(串行下载)
+	MaxSpeed        int64  // 最大下载速度(字节/秒)，0表示不限速
+	ConnectTimeout  int    // HTTP 连接超时(秒)
+	IdleTimeout     int    // Legacy total attempt timeout and HTTP idle connection timeout, in seconds.
+	ProxyURL        string // HTTP 代理URL
 }
 
 // HttpClientConfig HTTP客户端配置
@@ -49,12 +50,14 @@ type HttpClientConfig struct {
 
 // DownloadTaskConfig 单次下载任务配置
 type DownloadTaskConfig struct {
-	DisableResume bool   // Restart instead of appending incomplete download data.
-	Checksum      string // 文件校验值
-	CheckSize     string // 文件大小校验
-	MaxSize       int64  // Maximum allowed download size; zero disables the limit.
-	ShowProgress  bool   // 是否显示进度条
-	MaxSpeed      int64  // 最大下载速度(字节/秒)
+	ReadIdleTimeout int // Seconds without response-body data; zero disables this timeout.
+	resumed         bool
+	DisableResume   bool   // Restart instead of appending incomplete download data.
+	Checksum        string // 文件校验值
+	CheckSize       string // 文件大小校验
+	MaxSize         int64  // Maximum allowed download size; zero disables the limit.
+	ShowProgress    bool   // 是否显示进度条
+	MaxSpeed        int64  // 最大下载速度(字节/秒)
 }
 
 // DownloadError 自定义下载错误类型

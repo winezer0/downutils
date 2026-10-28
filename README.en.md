@@ -151,7 +151,7 @@ Use the context variants to propagate cancellation to HTTP requests, transfers, 
 
 Individual download failures and cancellations are reported in `DownloadResult.TaskInfos` and `FailedItems`; the returned top-level error can still be nil. Always inspect task results.
 
-`ExecuteDownloads` and `ExecuteDownloadsContext` validate the configuration. The variants accepting a custom client do not perform the same validation: call `ValidateDownConfig(config, options.EnableForce)` beforehand and pass a non-nil client. The caller owns the custom client's idle connection cleanup.
+All batch entry points perform the same configuration and option validation. A custom client must be non-nil; the caller owns its idle connection cleanup.
 
 ### Configuration loading and defaults
 
@@ -178,6 +178,7 @@ type DownOptions struct {
     MaxSpeed       int64  // Per-download bytes/second; 0 means unlimited
     ConnectTimeout int    // Connection and response header timeout; default 30 seconds
     IdleTimeout    int    // Total attempt timeout and HTTP idle connection timeout; default 60 seconds
+    ReadIdleTimeout int   // Response-body read idle timeout in seconds; default 0 disables it; excludes throttling
     ProxyURL       string // Explicit proxy URL; empty uses environment proxies
 }
 ```

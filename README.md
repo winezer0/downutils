@@ -178,7 +178,7 @@ func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions
 
 单项下载失败或取消通过 `DownloadResult.TaskInfos` 与 `FailedItems` 返回，顶层 `error` 可能仍为 `nil`，调用者应检查任务结果。`DownItem.MaxSize`（YAML：`max-size`）可限制最大文件字节数，包含未提供 Content-Length 的响应。URL 内容可能变化时，设置 `DownOptions.DisableResume = true`，每次尝试重新下载，避免拼接不同版本的数据。
 
-`ExecuteDownloads` / `ExecuteDownloadsContext` 会验证配置。使用自定义客户端的两个入口不会执行同样的配置验证，调用前可使用 `ValidateDownConfig(config, options.EnableForce)` 检查，并传入非空客户端；客户端由调用方负责关闭空闲连接。
+所有批量入口执行相同的配置和选项验证。自定义客户端必须非空，由调用方负责关闭空闲连接。
 
 #### LoadConfig
 
@@ -206,6 +206,7 @@ type DownOptions struct {
     MaxSpeed       int64  // 每个下载的最大速度（字节/秒，0 表示不限速）
     ConnectTimeout int    // 连接超时（秒，默认 30）
     IdleTimeout    int    // 单次尝试总超时及 HTTP 空闲连接超时（秒，默认 60）
+    ReadIdleTimeout int   // 等待响应体数据的空闲超时（秒，默认 0 关闭；不计限速等待）
     ProxyURL       string // 代理 URL
 }
 ```
