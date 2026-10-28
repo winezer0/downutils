@@ -2,6 +2,8 @@
 
 [简体中文](README.md) | English
 
+[![Native CI](https://github.com/winezer0/downutils/actions/workflows/ci.yml/badge.svg)](https://github.com/winezer0/downutils/actions/workflows/ci.yml)
+
 [CLI documentation](cmd/downfile/README.en.md)
 
 A Go file download library with YAML batch configuration, multiple download sources, retries, resumable downloads, checksums, concurrency, progress indicators, and rate limits.
@@ -11,8 +13,10 @@ A Go file download library with YAML batch configuration, multiple download sour
 - Multiple URLs per file, tried in order until a download succeeds.
 - URL-hashed temporary files for resuming retries within a batch.
 - MD5, SHA1, SHA256, exact file size verification, and maximum file size limits.
+- Verification of temporary files before replacing the destination; verification failure preserves the old destination.
+- Context cancellation during requests, scheduling, throttling, and retry waits, plus an independent response-body read idle timeout.
 - Configurable concurrency within each configuration group.
-- Progress bars, with a spinner when the file size is unknown.
+- ASCII progress on terminal stderr when TERM is not dumb, with a spinner for unknown file sizes.
 - Per-download rate limits using a token bucket.
 - Update policies based on file modification time, in hours or days.
 - HTTP and SOCKS5 proxies, with environment proxy support when no explicit proxy is set.
@@ -99,6 +103,8 @@ group_name:              # Group name used in logs
 
 Destination directory priority is `DownOptions.OutputForce` > `storage-dir` > the current directory. Disabled items are excluded from results unless `EnableForce` is set.
 
+Relative paths are resolved from the process working directory, not the configuration file's directory. Batch entry points require a plain `filename` without directory separators and reject `< > : " / \ | ? *` on every platform. Windows reserved names are not fully validated. Duplicate destination paths produce warnings but do not prevent downloads; use distinct destinations for different items.
+
 ### Update policy (`keep-updated`)
 
 | Value | Behavior when the destination file exists |
@@ -121,6 +127,8 @@ checksum: "sha256:abc123"
 checksum: "abc123" # MD5 by default
 ```
 
+Empty values disable verification. Algorithm names are case-insensitive. An unknown algorithm produces a warning and falls back to MD5; an empty digest disables verification. Configuration validation does not check digest length or hexadecimal syntax.
+
 ### File size (`check-size`)
 
 Use a number followed by an optional unit. KB/MB/GB use powers of 1024. This verifies the exact file size; use `max-size` for an upper bound.
@@ -132,7 +140,7 @@ check-size: "2GB"
 check-size: "1024" # Bytes
 ```
 
-`max-size` is an integer byte limit, including for responses without Content-Length. Zero disables the limit.
+Units B/K/M/G are also supported, case-insensitively. Empty, zero, or unparseable numeric values disable size verification. Unknown units produce a warning and are treated as bytes rather than a configuration error. `max-size` is an integer byte limit, including for responses without Content-Length. Zero disables the limit.
 
 ## API
 
@@ -147,11 +155,13 @@ func ExecuteDownloadsContext(ctx context.Context, options *DownOptions, config D
 func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions, config DownConfig, client *http.Client) (*DownloadResult, error)
 ```
 
-Use the context variants to propagate cancellation to HTTP requests, transfers, and retry waits. A nil options pointer uses library defaults.
+Use the context variants to propagate cancellation to HTTP requests, transfers, throttling, task scheduling, and retry waits. A nil Context uses Background; a nil options pointer uses library defaults.
 
 Individual download failures and cancellations are reported in `DownloadResult.TaskInfos` and `FailedItems`; the returned top-level error can still be nil. Always inspect task results.
 
 All batch entry points perform the same configuration and option validation. A custom client must be non-nil; the caller owns its idle connection cleanup.
+
+`ProcessDownItems(client, items, options)` is a lower-level single-group entry point. It validates options but does not perform batch task-field validation, enable filtering, or before/after cleanup, and it has no exported Context variant. Prefer the batch entry points for most integrations.
 
 ### Configuration loading and defaults
 
@@ -172,9 +182,9 @@ type DownOptions struct {
     OutputForce    string // Override destination directories; default empty
     UpdateForce    bool   // Ignore update policies
     EnableForce    bool   // Include disabled items
-    ShowProgress   bool   // Default true
+    ShowProgress   bool   // Allow terminal progress display; default true
     MaxRetries     int    // Total attempts per URL, including the first; default 3, at least 1
-    MaxConcurrent  int    // Concurrency within each group; default 1
+    MaxConcurrent  int    // Concurrency within each group; default 1; 0/1 means serial
     MaxSpeed       int64  // Per-download bytes/second; 0 means unlimited
     ConnectTimeout int    // Connection and response header timeout; default 30 seconds
     IdleTimeout    int    // Total attempt timeout and HTTP idle connection timeout; default 60 seconds
@@ -183,7 +193,23 @@ type DownOptions struct {
 }
 ```
 
-Use `NewDefaultDownOptions()` and override the fields you need. A zero-valued struct does not provide these defaults. Groups are processed sequentially. `MaxSpeed` is a per-download limit, not a shared limit across concurrent downloads.
+Use `NewDefaultDownOptions()` and override the fields you need. A zero-valued struct does not provide these defaults and is rejected because MaxRetries is zero. Groups run one at a time, but their order follows Go map iteration and does not preserve YAML group order. Results within each group preserve item order. Concurrency, speed, and timeouts must not be negative. `MaxSpeed` is per download, not shared across concurrent downloads.
+
+### Timeout and retry semantics
+
+- Despite its legacy name, `MaxRetries` is the total attempts per URL, including the first. Ordinary retry delays are 2, 4, 6, ... seconds. A 404 skips to the next source; some other errors also stop retries for the current source early.
+- `IdleTimeout` sets the total deadline for each attempt and the idle connection timeout for library-created clients. **Zero causes immediate expiry; it does not disable the download timeout.** Increase it for large or slow downloads.
+- `ReadIdleTimeout` defaults to 0 (disabled). It limits waiting for response-body reads, resets as data arrives, and excludes throttling waits. It does not replace connection, header, or total timeouts.
+- Parent Context deadlines and any Timeout configured on a custom HTTP client still apply.
+
+```go
+options := downutils.NewDefaultDownOptions()
+options.IdleTimeout = 1800    // Up to 30 minutes per attempt
+options.ReadIdleTimeout = 30 // Up to 30 seconds waiting for response-body data
+result, err := downutils.ExecuteDownloadsContext(ctx, options, config)
+```
+
+This fragment assumes `ctx` and `config` are initialized. Check both `err` and task results.
 
 ### HTTP clients
 
@@ -230,6 +256,8 @@ const (
 
 `TaskInfos` contains details for each processed item. `FailedItems` includes failed downloads and configuration error statuses. Use `DisplayDownloadResult(result)` to log a summary and per-task details.
 
+`DownloadURL` records the URL on success. `Resumed` is true only when a successful download actually used existing partial data; a full-download fallback records false. Existing destinations skipped by the update policy are not reverified.
+
 ## Advanced usage
 
 ### Reuse a custom HTTP client
@@ -245,9 +273,7 @@ if err != nil {
 }
 defer client.CloseIdleConnections()
 
-if messages := downutils.ValidateDownConfig(config, options.EnableForce); len(messages) > 0 {
-    panic(messages)
-}
+// Batch entry points validate configuration and options automatically.
 result, err := downutils.ExecuteDownloadsWithClient(options, config, client)
 ```
 
@@ -289,11 +315,17 @@ const (
 
 Checksum and exact size failures use `ErrChecksumMismatch`; exceeding `max-size` uses `ErrMaximumSizeExceeded`. Batch results expose task failures through status and error message fields.
 
+These constants describe internal classification; not every error is converted to DownloadError. Disk-full classification uses platform-native errors and errors.Is through wrappers: ERROR_DISK_FULL / ERROR_HANDLE_DISK_FULL on Windows, and ENOSPC / EDQUOT (quota exhaustion) on Linux/macOS. Batch results retain status and error text, not an original error for errors.As.
+
 ## Resume and temporary files
 
 Temporary filenames follow `<destination>.<URL hash>.download`. Subsequent attempts within a batch can resume from the same temporary file. If the server does not support Range requests, the download restarts from the beginning.
 
+Resume does not currently validate ETag/Last-Modified. Use `DisableResume=true` for URLs whose content can change. Configured size and checksum checks run against the temporary file before destination replacement: Windows uses MoveFileEx and Linux/macOS use os.Rename. Without configured checks, a completed transfer is replaced directly.
+
 Batch entry points clean `.download` files in configured directories (or the forced output directory) before and after execution. Resume across separate batches or processes is therefore not guaranteed. Cleanup may also remove other files with the same suffix in those directories; use dedicated download directories.
+
+Cleanup scans collected directories recursively, with no retention period or capacity budget. If both storage-dir and OutputForce are empty, the default current directory is not automatically added to the cleanup list.
 
 ## Logging
 
@@ -310,11 +342,42 @@ Import `github.com/winezer0/slogs` for this fragment. `Init` does not reconfigur
 
 The level argument of `NewConfig` controls console output. File output defaults to debug level and JSON format. Use `off` as the console format to disable console output.
 
+## Platform support and verification
+
+Windows, Linux, and macOS are supported. Paths use filepath, and runtime messages use English; system errors, paths, and server content may still contain other languages.
+
+| Platform | Release build targets | Native CI |
+|---|---|---|
+| Windows | amd64, arm64 | windows-latest |
+| Linux | amd64, arm64 | ubuntu-latest |
+| macOS (darwin) | amd64, arm64 | macos-latest |
+
+Native CI tests each runner's own architecture, not all six OS/architecture combinations on real hardware. Release binaries are cross-compiled with CGO_ENABLED=0. Library development and source builds require Go 1.25.5 or later; prebuilt CLI binaries do not require Go. Linux/macOS binaries need executable permissions. This downloader does not automatically chmod other programs it downloads.
+
+## Development, CI, and releases
+
+```bash
+go vet ./...
+go test -race -count=1 -timeout=10m ./...
+go build ./...
+```
+
+Race detection requires a supported platform and a C compiler. Normal release builds disable CGO and do not require a C compiler.
+
+- [Native CI](.github/workflows/ci.yml) runs on main pushes, pull requests, manual dispatches, and calls from other workflows. It performs vet, native race tests, CLI builds, and metadata checks on three platforms, taking the Go version from go.mod.
+- [Build and Release](.github/workflows/build_and_release.yml) is manual only. Supply a version without a v prefix, such as `0.1.0` or `0.1.0-rc.1`. Three-platform native checks must pass before building six artifacts.
+- `publish=false` (default) uploads Actions artifacts without creating a tag or Release. Only explicit `publish=true` publishes `v<version>`. Versions with a prerelease suffix are marked prerelease. Ordinary pushes do not publish.
+- Release builds inject `main.AppVersion` and `main.BuildDate` (UTC date). Without injection, source builds use the defaults in options.go rather than an automatically generated version/date.
+
+See the [CLI documentation](cmd/downfile/README.en.md#source-builds-and-releases) for build commands, artifact names, and metadata injection examples.
+
 ## Dependencies
 
 - `gopkg.in/yaml.v3`: YAML parsing.
 - `github.com/schollz/progressbar/v3`: Progress indicators.
 - `github.com/winezer0/slogs`: Logging.
+- `github.com/jessevdk/go-flags`: CLI option parsing.
+- `golang.org/x/sys` and `golang.org/x/term`: Platform errors, file replacement, and terminal detection.
 
 ## License
 
