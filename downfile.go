@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
@@ -56,17 +55,8 @@ func classifyError(err error, statusCode int) error {
 		}
 	}
 
-	// 检查是否是磁盘空间不足(Windows 错误码 112)
-	if pathErr, ok := err.(*os.PathError); ok {
-		if errno, ok := pathErr.Err.(syscall.Errno); ok {
-			// Windows ERROR_DISK_FULL = 112, ERROR_HANDLE_DISK_FULL = 39
-			if errno == 112 || errno == 39 {
-				return DownloadError{
-					Message: fmt.Sprintf("disk full: %v", err),
-					Type:    ErrDiskFull,
-				}
-			}
-		}
+	if isDiskFull(err) {
+		return DownloadError{Message: fmt.Sprintf("disk full: %v", err), Type: ErrDiskFull}
 	}
 
 	// 检查错误信息中是否包含网络相关关键字

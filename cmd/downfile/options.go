@@ -13,8 +13,12 @@ const (
 	AppName      = "downfile"
 	AppShortDesc = "ISEC dependency downloader"
 	AppLongDesc  = "Download dependency files from a YAML configuration."
-	AppVersion   = "0.0.3"
-	BuildDate    = "2026-04-27"
+)
+
+// AppVersion and BuildDate can be injected using go build -ldflags -X.
+var (
+	AppVersion = "0.0.3"
+	BuildDate  = "2026-04-27"
 )
 
 // Options 应用配置结构体
