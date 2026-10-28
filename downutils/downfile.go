@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/schollz/progressbar/v3"
 	"io"
@@ -18,6 +19,9 @@ import (
 
 // classifyError 对错误进行分类，返回 DownloadError
 func classifyError(err error, statusCode int) error {
+	if errors.Is(err, context.Canceled) {
+		return DownloadError{Message: fmt.Sprintf("download cancelled: %v", err), Type: ErrDownloadCancelled}
+	}
 	// 检查是否是 HTTP 状态码错误
 	if statusCode >= 400 {
 		if statusCode == http.StatusNotFound {
@@ -96,7 +100,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	var err error
 
 	existingTempFile := findIncompleteTempFile(storePath, downloadUrl)
-	if existingTempFile != "" {
+	if existingTempFile != "" && !taskConfig.DisableResume {
 		info, statErr := os.Stat(existingTempFile)
 		if statErr == nil && info.Size() > 0 {
 			logging.Infof("found incomplete file %s, resuming download from %d bytes", existingTempFile, info.Size())
@@ -136,7 +140,16 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	// 尝试下载，支持断点续传失败后降级为完整下载
 	resp, actualDownloadedBytes, err := downloadWithResumeFallback(ctx, client, downloadUrl, downloadedBytes)
 	if err != nil {
+		if ctx.Err() != nil {
+			return classifyError(ctx.Err(), 0)
+		}
 		return err
+	}
+	if resp == nil {
+		resp, err = HttpGetWithRange(ctx, client, downloadUrl, 0)
+		if err != nil {
+			return err
+		}
 	}
 	defer resp.Body.Close()
 
@@ -154,12 +167,6 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 		fileClosed = false
 		downloadedBytes = 0
 
-		// 重新发送完整下载请求
-		resp, err = HttpGetWithRange(ctx, client, downloadUrl, 0)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
 	}
 
 	// 获取文件大小
@@ -169,14 +176,17 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 		contentRange := resp.Header.Get("Content-Range")
 		if contentRange != "" {
 			// 格式：bytes start-end/total
-			var total int64
-			_, err := fmt.Sscanf(contentRange, "bytes %d-%d/%d", nil, nil, &total)
+			var start, end, total int64
+			_, err := fmt.Sscanf(contentRange, "bytes %d-%d/%d", &start, &end, &total)
 			if err == nil {
 				fileSize = total
 			}
 		}
 	} else {
 		fileSize = resp.ContentLength
+	}
+	if taskConfig.MaxSize > 0 && (fileSize > taskConfig.MaxSize || downloadedBytes > taskConfig.MaxSize) {
+		return DownloadError{Message: fmt.Sprintf("download size exceeds maximum of %d bytes", taskConfig.MaxSize), Type: ErrMaximumSizeExceeded}
 	}
 	fileName := filepath.Base(storePath)
 
@@ -200,22 +210,25 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	if taskConfig.MaxSpeed > 0 {
 		reader = NewLimitReader(resp.Body, taskConfig.MaxSpeed)
 	}
+	if taskConfig.MaxSize > 0 {
+		reader = io.LimitReader(reader, taskConfig.MaxSize-downloadedBytes+1)
+	}
 
 	// 复制内容，支持context取消
 	buf := make([]byte, DownloadBufferSize)
-	_, err = copyWithContext(ctx, writer, reader, buf)
+	written, err := copyWithContext(ctx, writer, reader, buf)
 
 	// 检查是否是因为context取消导致的错误
 	if ctx.Err() != nil {
-		return DownloadError{
-			Message: fmt.Sprintf("download cancelled: %v", ctx.Err()),
-			Type:    ErrDownloadCancelled,
-		}
+		return classifyError(ctx.Err(), 0)
 	}
 
 	// 检查其他错误
 	if err != nil {
 		return classifyError(err, resp.StatusCode)
+	}
+	if taskConfig.MaxSize > 0 && written+downloadedBytes > taskConfig.MaxSize {
+		return DownloadError{Message: fmt.Sprintf("download size exceeds maximum of %d bytes", taskConfig.MaxSize), Type: ErrMaximumSizeExceeded}
 	}
 
 	// 关闭进度条(触发换行)
@@ -308,6 +321,9 @@ func downloadWithResumeFallback(ctx context.Context, client *http.Client, downlo
 	// 先发送一个轻量请求检查服务器是否支持 Range 请求
 	checkResp, err := HttpHeadRequest(ctx, client, downloadUrl)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, 0, ctx.Err()
+		}
 		logging.Warnf("failed to check server range support, falling back to full download: %v", err)
 		return nil, 0, nil // 返回nil响应，由调用方处理
 	}
@@ -324,6 +340,9 @@ func downloadWithResumeFallback(ctx context.Context, client *http.Client, downlo
 	// 服务器支持 Range 请求，尝试断点续传
 	resp, err := HttpGetWithRange(ctx, client, downloadUrl, resumeFrom)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, 0, ctx.Err()
+		}
 		logging.Warnf("resume request failed, falling back to full download: %v", err)
 		return nil, 0, nil
 	}

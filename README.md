@@ -19,7 +19,7 @@
 ## 安装
 
 ```bash
-go get github.com/your-org/downutils
+go get github.com/winezer0/downutils
 ```
 
 ## 快速开始
@@ -46,7 +46,7 @@ databases:
 package main
 
 import (
-    "github.com/your-org/downutils"
+    "github.com/winezer0/downutils/downutils"
 )
 
 func main() {
@@ -149,6 +149,15 @@ func ExecuteDownloadsWithClient(options *DownOptions, downConfig DownConfig, htt
 
 适用于需要复用 HTTP 客户端的场景。
 
+后台服务可使用带上下文的入口，将取消信号传递到请求、下载和重试等待：
+
+```go
+func ExecuteDownloadsContext(ctx context.Context, options *DownOptions, config DownConfig) (*DownloadResult, error)
+func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions, config DownConfig, client *http.Client) (*DownloadResult, error)
+```
+
+单项下载失败或取消通过 `DownloadResult.TaskInfos` 与 `FailedItems` 返回，调用者应检查任务结果。`DownItem.MaxSize`（YAML：`max-size`）可限制最大文件字节数，包含未提供 Content-Length 的响应。URL 内容可能变化时，设置 `DownOptions.DisableResume = true`，每次尝试重新下载，避免拼接不同版本的数据。
+
 #### LoadConfig
 
 加载 YAML 配置文件。
@@ -163,6 +172,7 @@ func LoadConfig(filename string) (DownConfig, error)
 
 ```go
 type DownOptions struct {
+    DisableResume  bool   // 每次尝试重新下载，适用于内容可变化的 URL
     OutputForce    string // 强制保存目录（优先级最高）
     UpdateForce    bool   // 强制更新（忽略 KeepUpdated 策略）
     EnableForce    bool   // 强制启用（忽略 Enable 字段）

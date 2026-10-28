@@ -70,6 +70,7 @@ func HttpGet(ctx context.Context, client *http.Client, downloadUrl string) (*htt
 
 	// 检查响应状态
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, classifyError(fmt.Errorf("HTTP request failed"), resp.StatusCode)
 	}
 	return resp, nil
@@ -102,6 +103,7 @@ func HttpGetWithRange(ctx context.Context, client *http.Client, downloadUrl stri
 	// 200 OK: 完整下载(服务器不支持Range或从头开始)
 	// 206 Partial Content: 断点续传成功
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		resp.Body.Close()
 		return nil, classifyError(fmt.Errorf("HTTP request failed"), resp.StatusCode)
 	}
 
@@ -127,6 +129,7 @@ func HttpHeadRequest(ctx context.Context, client *http.Client, downloadUrl strin
 
 	// 检查响应状态
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, classifyError(fmt.Errorf("HEAD request failed"), resp.StatusCode)
 	}
 

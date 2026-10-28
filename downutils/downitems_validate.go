@@ -49,6 +49,9 @@ func validateDownItem(items []DownItem, enableForce bool) []string {
 		} else if invalidCharsRegex.MatchString(item.FileName) {
 			errs = append(errs, fmt.Sprintf("file name '%s' contains invalid characters for module '%s'", item.FileName, item.Module))
 		}
+		if item.MaxSize < 0 {
+			errs = append(errs, fmt.Sprintf("maximum file size cannot be negative for module '%s'", item.Module))
+		}
 
 		// 验证 DownloadURLs 字段
 		if len(item.DownloadURLs) == 0 {

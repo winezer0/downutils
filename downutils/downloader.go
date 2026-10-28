@@ -1,6 +1,7 @@
 package downutils
 
 import (
+	"context"
 	"fmt"
 	"github.com/winezer0/xutils/logging"
 	"net/http"
@@ -41,6 +42,14 @@ type DownloadResult struct {
 //   - config: 下载配置选项
 //   - downConfig: 已加载的下载配置(由调用方负责加载)
 func ExecuteDownloads(options *DownOptions, downConfig DownConfig) (*DownloadResult, error) {
+	return ExecuteDownloadsContext(context.Background(), options, downConfig)
+}
+
+// ExecuteDownloadsContext executes the configured downloads until completion or cancellation.
+func ExecuteDownloadsContext(ctx context.Context, options *DownOptions, downConfig DownConfig) (*DownloadResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if options == nil {
 		options = NewDefaultDownOptions()
 	}
@@ -75,7 +84,7 @@ func ExecuteDownloads(options *DownOptions, downConfig DownConfig) (*DownloadRes
 	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
 
 	// 处理所有配置组
-	result := processAllConfigGroups(httpClient, downConfig, options)
+	result := processAllConfigGroups(ctx, httpClient, downConfig, options)
 
 	// 下载后再次清理未完成的下载文件
 	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
@@ -86,6 +95,14 @@ func ExecuteDownloads(options *DownOptions, downConfig DownConfig) (*DownloadRes
 // ExecuteDownloadsWithClient 使用已有的HTTP客户端执行下载流程
 // 适用于需要复用HTTP客户端的场景
 func ExecuteDownloadsWithClient(options *DownOptions, downConfig DownConfig, httpClient *http.Client) (*DownloadResult, error) {
+	return ExecuteDownloadsWithClientContext(context.Background(), options, downConfig, httpClient)
+}
+
+// ExecuteDownloadsWithClientContext executes downloads with a caller-provided HTTP client and context.
+func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions, downConfig DownConfig, httpClient *http.Client) (*DownloadResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if options == nil {
 		options = NewDefaultDownOptions()
 	}
@@ -94,7 +111,7 @@ func ExecuteDownloadsWithClient(options *DownOptions, downConfig DownConfig, htt
 	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
 
 	// 处理所有配置组
-	result := processAllConfigGroups(httpClient, downConfig, options)
+	result := processAllConfigGroups(ctx, httpClient, downConfig, options)
 
 	// 下载后再次清理未完成的下载文件
 	cleanupAllIncompleteDownloads(downConfig, options.OutputForce)
@@ -103,7 +120,7 @@ func ExecuteDownloadsWithClient(options *DownOptions, downConfig DownConfig, htt
 }
 
 // processAllConfigGroups 处理所有配置组的下载任务
-func processAllConfigGroups(httpClient *http.Client, config DownConfig, options *DownOptions) *DownloadResult {
+func processAllConfigGroups(ctx context.Context, httpClient *http.Client, config DownConfig, options *DownOptions) *DownloadResult {
 	result := &DownloadResult{}
 
 	for groupName, downItems := range config {
@@ -113,7 +130,7 @@ func processAllConfigGroups(httpClient *http.Client, config DownConfig, options 
 		}
 		if len(downItems) > 0 {
 			logging.Infof("Processing config group: %s", groupName)
-			taskInfos := ProcessDownItems(httpClient, downItems, options)
+			taskInfos := processDownItems(ctx, httpClient, downItems, options)
 			result.TotalItems += len(downItems)
 			result.TaskInfos = append(result.TaskInfos, taskInfos...)
 

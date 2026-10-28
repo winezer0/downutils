@@ -21,10 +21,12 @@ type DownItem struct {
 	Enable       bool     `yaml:"enable" json:"enable"`              // 是否开启任务 对于未开启的任务需要进行过滤
 	Checksum     string   `yaml:"checksum" json:"checksum"`          // 文件校验值，格式：md5:xxx/sha1:xxx/sha256:xxx，前缀为空时默认使用md5算法
 	CheckSize    string   `yaml:"check-size" json:"checkSize"`       // 文件大小校验，格式：1KB/1MB/1GB，为空或0时不校验文件大小
+	MaxSize      int64    `yaml:"max-size" json:"maxSize"`           // 最大允许下载文件大小，0表示不限制
 }
 
 // DownOptions 下载配置选项，调用方传递额外的下载参数
 type DownOptions struct {
+	DisableResume  bool   // Restart each attempt for mutable download URLs.
 	OutputForce    string // 强制保存目录：不为空时优先级最高，始终使用此目录保存文件
 	UpdateForce    bool   // 强制更新：为 true 时忽略 KeepUpdated 策略，强制重新下载
 	EnableForce    bool   // 强制启用：为 true 时忽略 Enable 字段，强制下载所有任务
@@ -46,10 +48,12 @@ type HttpClientConfig struct {
 
 // DownloadTaskConfig 单次下载任务配置
 type DownloadTaskConfig struct {
-	Checksum     string // 文件校验值
-	CheckSize    string // 文件大小校验
-	ShowProgress bool   // 是否显示进度条
-	MaxSpeed     int64  // 最大下载速度(字节/秒)
+	DisableResume bool   // Restart instead of appending incomplete download data.
+	Checksum      string // 文件校验值
+	CheckSize     string // 文件大小校验
+	MaxSize       int64  // Maximum allowed download size; zero disables the limit.
+	ShowProgress  bool   // 是否显示进度条
+	MaxSpeed      int64  // 最大下载速度(字节/秒)
 }
 
 // DownloadError 自定义下载错误类型
@@ -109,7 +113,8 @@ const (
 	// ErrTimeout 超时错误
 	ErrTimeout = "TIMEOUT"
 	// ErrChecksumMismatch 文件校验值或大小不匹配
-	ErrChecksumMismatch = "CHECKSUM_MISMATCH"
+	ErrChecksumMismatch    = "CHECKSUM_MISMATCH"
+	ErrMaximumSizeExceeded = "MAXIMUM_SIZE_EXCEEDED"
 	// ErrCreateTempFile 创建临时文件失败
 	ErrCreateTempFile = "CREATE_TEMP_FILE_FAILED"
 )

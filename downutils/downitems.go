@@ -33,6 +33,10 @@ func CheckDuplicatePaths(config DownConfig, outputForce string) {
 
 // ProcessDownItems 处理配置组，返回每个任务的详细信息
 func ProcessDownItems(client *http.Client, items []DownItem, downOptions *DownOptions) []TaskInfo {
+	return processDownItems(context.Background(), client, items, downOptions)
+}
+
+func processDownItems(ctx context.Context, client *http.Client, items []DownItem, downOptions *DownOptions) []TaskInfo {
 	if downOptions == nil {
 		downOptions = NewDefaultDownOptions()
 	}
@@ -43,7 +47,7 @@ func ProcessDownItems(client *http.Client, items []DownItem, downOptions *DownOp
 	// 如果并发数为1，使用串行下载
 	if downOptions.MaxConcurrent <= 1 {
 		for _, item := range items {
-			taskInfo := processSingleItem(client, item, downOptions)
+			taskInfo := processSingleItem(ctx, client, item, downOptions)
 			taskInfos = append(taskInfos, taskInfo)
 		}
 		return taskInfos
@@ -65,7 +69,7 @@ func ProcessDownItems(client *http.Client, items []DownItem, downOptions *DownOp
 			defer wg.Done()
 			defer func() { <-sem }() // 释放信号量
 
-			taskInfo := processSingleItem(client, it, downOptions)
+			taskInfo := processSingleItem(ctx, client, it, downOptions)
 			mu.Lock()
 			results[idx] = taskInfo
 			mu.Unlock()
@@ -83,7 +87,7 @@ func ProcessDownItems(client *http.Client, items []DownItem, downOptions *DownOp
 }
 
 // processSingleItem 处理单个下载项
-func processSingleItem(client *http.Client, item DownItem, downOptions *DownOptions) TaskInfo {
+func processSingleItem(parentCtx context.Context, client *http.Client, item DownItem, downOptions *DownOptions) TaskInfo {
 	// 确定最终存储目录，优先级：OutputForce > StorageDir
 	storePath := GetDownItemFinalPath(item.FileName, item.StorageDir, downOptions.OutputForce)
 
@@ -160,14 +164,16 @@ func processSingleItem(client *http.Client, item DownItem, downOptions *DownOpti
 			}
 
 			// 创建带超时的context
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(downOptions.IdleTimeout)*time.Second)
+			ctx, cancel := context.WithTimeout(parentCtx, time.Duration(downOptions.IdleTimeout)*time.Second)
 
 			// 执行下载
 			taskConfig := &DownloadTaskConfig{
-				Checksum:     item.Checksum,
-				CheckSize:    item.CheckSize,
-				ShowProgress: downOptions.ShowProgress,
-				MaxSpeed:     downOptions.MaxSpeed,
+				DisableResume: downOptions.DisableResume,
+				Checksum:      item.Checksum,
+				CheckSize:     item.CheckSize,
+				MaxSize:       item.MaxSize,
+				ShowProgress:  downOptions.ShowProgress,
+				MaxSpeed:      downOptions.MaxSpeed,
 			}
 			if err := downloadFile(ctx, client, downloadURL, storePath, taskConfig); err != nil {
 				cancel()
@@ -209,6 +215,11 @@ func processSingleItem(client *http.Client, item DownItem, downOptions *DownOpti
 						allUrlsNotFound = false
 						break retryLoop
 
+					case ErrMaximumSizeExceeded:
+						taskInfo.ErrorMsg = err.Error()
+						allUrlsNotFound = false
+						break retryLoop
+
 					case ErrChecksumMismatch:
 						logging.Warnf("checksum/size verification failed for URL: %s", downloadURL)
 						taskInfo.ErrorMsg = fmt.Sprintf("verification failed: %v", err)
@@ -227,9 +238,9 @@ func processSingleItem(client *http.Client, item DownItem, downOptions *DownOpti
 					logging.Infof("waiting %v before retry...", waitTime)
 					select {
 					case <-time.After(waitTime):
-					case <-ctx.Done():
-						logging.Warnf("retry wait cancelled: %v", ctx.Err())
-						taskInfo.ErrorMsg = fmt.Sprintf("retry wait cancelled: %v", ctx.Err())
+					case <-parentCtx.Done():
+						logging.Warnf("retry wait cancelled: %v", parentCtx.Err())
+						taskInfo.ErrorMsg = fmt.Sprintf("retry wait cancelled: %v", parentCtx.Err())
 						allUrlsNotFound = false
 						break retryLoop
 					}
