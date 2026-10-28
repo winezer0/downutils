@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/winezer0/xutils/logging"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/winezer0/slogs"
 )
 
 // CheckDuplicatePaths 检查配置中是否存在重复的保存路径
@@ -22,7 +23,7 @@ func CheckDuplicatePaths(config DownConfig, outputForce string) {
 
 			// 检查是否已存在相同路径
 			if existingModule, exists := pathMap[storePath]; exists {
-				logging.Warnf("duplicate save path detected: %s (used by both '%s' and '%s' in group '%s')",
+				slogs.Warnf("duplicate save path detected: %s (used by both '%s' and '%s' in group '%s')",
 					storePath, existingModule, item.Module, groupName)
 			} else {
 				pathMap[storePath] = item.Module
@@ -96,7 +97,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 	// 如果强制更新，则忽略更新策略，直接下载
 	if downOptions.UpdateForce {
-		logging.Infof("force update enabled for %s", item.FileName)
+		slogs.Infof("force update enabled for %s", item.FileName)
 	} else {
 		// 获取文件修改时间
 		fileModTime := GetFileModTime(storePath)
@@ -106,7 +107,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 		// 如果文件已存在且不需要更新，则跳过
 		if fileExists && !needsUpdate {
-			logging.Infof("file %s already exists and does not need update, skipping", item.FileName)
+			slogs.Infof("file %s already exists and does not need update, skipping", item.FileName)
 			return TaskInfo{
 				Module:      item.Module,
 				FileName:    item.FileName,
@@ -118,7 +119,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 	// 创建目录
 	if err := makeDirs(storePath, true); err != nil {
-		logging.Errorf("directory [%s] initialization failed: %v", item.FileName, err)
+		slogs.Errorf("directory [%s] initialization failed: %v", item.FileName, err)
 		return TaskInfo{
 			Module:      item.Module,
 			FileName:    item.FileName,
@@ -128,7 +129,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 		}
 	}
 
-	logging.Infof("starting download %s...", item.Module)
+	slogs.Infof("starting download %s...", item.Module)
 
 	// 初始化任务信息
 	taskInfo := TaskInfo{
@@ -148,7 +149,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 		downloadURL := url
 		if strings.Contains(url, "github.com") && strings.Contains(url, "/blob/") {
 			downloadURL = convertGitHubURL(url)
-			logging.Debugf("converted GitHub URL: %s -> %s", url, downloadURL)
+			slogs.Debugf("converted GitHub URL: %s -> %s", url, downloadURL)
 		}
 
 		hasTriedUrls = true
@@ -158,9 +159,9 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 	retryLoop:
 		for attempt := 1; attempt <= downOptions.MaxRetries; attempt++ {
 			if attempt > 1 {
-				logging.Infof("retry %d downloading...", attempt)
+				slogs.Infof("retry %d downloading...", attempt)
 			} else {
-				logging.Infof("downloading %s...", downloadURL)
+				slogs.Infof("downloading %s...", downloadURL)
 			}
 
 			// 创建带超时的context
@@ -180,37 +181,37 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 				// 对错误进行分类
 				var downloadErr DownloadError
-				logging.Errorf("download failed: %v", err)
+				slogs.Errorf("download failed: %v", err)
 
 				if errors.As(err, &downloadErr) {
 					switch downloadErr.Type {
 					case ErrResourceNotFound:
-						logging.Warnf("resource not found (404) for URL: %s", downloadURL)
+						slogs.Warnf("resource not found (404) for URL: %s", downloadURL)
 						urlFailed404 = true
 						taskInfo.ErrorMsg = fmt.Sprintf("resource not found (404): %s", downloadURL)
 						break retryLoop
 
 					case ErrDownloadCancelled:
-						logging.Warnf("download cancelled: %v", err)
+						slogs.Warnf("download cancelled: %v", err)
 						taskInfo.ErrorMsg = fmt.Sprintf("download cancelled: %v", err)
 						break retryLoop
 
 					case ErrTimeout:
-						logging.Warnf("timeout error for URL: %s", downloadURL)
+						slogs.Warnf("timeout error for URL: %s", downloadURL)
 						taskInfo.ErrorMsg = fmt.Sprintf("timeout error: %v", err)
 
 					case ErrNetworkError:
-						logging.Warnf("network error for URL: %s", downloadURL)
+						slogs.Warnf("network error for URL: %s", downloadURL)
 						taskInfo.ErrorMsg = fmt.Sprintf("network error: %v", err)
 
 					case ErrDiskFull:
-						logging.Errorf("disk full, cannot download to %s", storePath)
+						slogs.Errorf("disk full, cannot download to %s", storePath)
 						taskInfo.ErrorMsg = fmt.Sprintf("disk full: %v", err)
 						allUrlsNotFound = false
 						break retryLoop
 
 					case ErrPermissionDenied:
-						logging.Errorf("permission denied for path: %s", storePath)
+						slogs.Errorf("permission denied for path: %s", storePath)
 						taskInfo.ErrorMsg = fmt.Sprintf("permission denied: %v", err)
 						allUrlsNotFound = false
 						break retryLoop
@@ -221,11 +222,11 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 						break retryLoop
 
 					case ErrChecksumMismatch:
-						logging.Warnf("checksum/size verification failed for URL: %s", downloadURL)
+						slogs.Warnf("checksum/size verification failed for URL: %s", downloadURL)
 						taskInfo.ErrorMsg = fmt.Sprintf("verification failed: %v", err)
 
 					default:
-						logging.Warnf("unknown error type: %s", downloadErr.Type)
+						slogs.Warnf("unknown error type: %s", downloadErr.Type)
 						taskInfo.ErrorMsg = fmt.Sprintf("unknown error: %v", err)
 					}
 				} else {
@@ -235,11 +236,11 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 				// 如果不是最后一次尝试，则等待后重试
 				if attempt < downOptions.MaxRetries {
 					waitTime := time.Duration(attempt) * 2 * time.Second
-					logging.Infof("waiting %v before retry...", waitTime)
+					slogs.Infof("waiting %v before retry...", waitTime)
 					select {
 					case <-time.After(waitTime):
 					case <-parentCtx.Done():
-						logging.Warnf("retry wait cancelled: %v", parentCtx.Err())
+						slogs.Warnf("retry wait cancelled: %v", parentCtx.Err())
 						taskInfo.ErrorMsg = fmt.Sprintf("retry wait cancelled: %v", parentCtx.Err())
 						allUrlsNotFound = false
 						break retryLoop
@@ -249,7 +250,7 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 				break
 			} else {
 				cancel()
-				logging.Infof("successfully downloaded %s to %s", item.Module, storePath)
+				slogs.Infof("successfully downloaded %s to %s", item.Module, storePath)
 				taskInfo.Status = TaskStatusSuccess
 				taskInfo.DownloadURL = downloadURL
 				taskInfo.ErrorMsg = ""
@@ -271,12 +272,12 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 	if !success {
 		if allUrlsNotFound && hasTriedUrls {
-			logging.Warnf("all URLs returned 404 for %s, please check the URLs in the configuration file", item.Module)
+			slogs.Warnf("all URLs returned 404 for %s, please check the URLs in the configuration file", item.Module)
 			if taskInfo.ErrorMsg == "" {
 				taskInfo.ErrorMsg = "all URLs returned 404"
 			}
 		} else {
-			logging.Errorf("all download sources failed, unable to download %s", item.Module)
+			slogs.Errorf("all download sources failed, unable to download %s", item.Module)
 			if taskInfo.ErrorMsg == "" {
 				taskInfo.ErrorMsg = "all download sources failed"
 			}

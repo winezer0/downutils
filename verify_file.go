@@ -6,11 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/winezer0/xutils/logging"
 	"io"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/winezer0/slogs"
 )
 
 // ChecksumType 校验类型
@@ -54,7 +55,7 @@ func parseChecksum(checksum string) ParsedChecksum {
 		switch checkType {
 		case ChecksumMD5, ChecksumSHA1, ChecksumSHA256:
 			if value == "" {
-				logging.Warnf("empty checksum value for type %s, verification disabled", checkType)
+				slogs.Warnf("empty checksum value for type %s, verification disabled", checkType)
 				return ParsedChecksum{Enable: false}
 			}
 			return ParsedChecksum{
@@ -63,7 +64,7 @@ func parseChecksum(checksum string) ParsedChecksum {
 				Enable: true,
 			}
 		default:
-			logging.Warnf("unknown checksum type '%s', treating as md5", checkType)
+			slogs.Warnf("unknown checksum type '%s', treating as md5", checkType)
 			return ParsedChecksum{
 				Type:   ChecksumMD5,
 				Value:  value,
@@ -114,14 +115,14 @@ func parseCheckSize(checkSize string) ParsedCheckSize {
 	}
 
 	if numStr == "" {
-		logging.Warnf("invalid check-size format '%s', verification disabled", checkSize)
+		slogs.Warnf("invalid check-size format '%s', verification disabled", checkSize)
 		return ParsedCheckSize{Enable: false}
 	}
 
 	// 解析数字
 	size, err := strconv.ParseFloat(numStr, 64)
 	if err != nil || size <= 0 {
-		logging.Warnf("invalid check-size value '%s', verification disabled", checkSize)
+		slogs.Warnf("invalid check-size value '%s', verification disabled", checkSize)
 		return ParsedCheckSize{Enable: false}
 	}
 
@@ -138,7 +139,7 @@ func parseCheckSize(checkSize string) ParsedCheckSize {
 	case "B", "":
 		bytes = int64(size)
 	default:
-		logging.Warnf("unknown check-size unit '%s', treating as bytes", unit)
+		slogs.Warnf("unknown check-size unit '%s', treating as bytes", unit)
 		bytes = int64(size)
 	}
 
@@ -198,7 +199,7 @@ func verifyFileChecksum(filePath string, parsed ParsedChecksum) (bool, string, e
 	// 比较校验值(不区分大小写)
 	match := strings.EqualFold(actual, parsed.Value)
 	if !match {
-		logging.Warnf("checksum mismatch for %s: expected %s:%s, got %s:%s",
+		slogs.Warnf("checksum mismatch for %s: expected %s:%s, got %s:%s",
 			filePath, parsed.Type, parsed.Value, parsed.Type, actual)
 	}
 
@@ -220,7 +221,7 @@ func verifyFileSize(filePath string, parsed ParsedCheckSize) (bool, int64, error
 	match := actualSize == parsed.Size
 
 	if !match {
-		logging.Warnf("file size mismatch for %s: expected %d bytes, got %d bytes",
+		slogs.Warnf("file size mismatch for %s: expected %d bytes, got %d bytes",
 			filePath, parsed.Size, actualSize)
 	}
 

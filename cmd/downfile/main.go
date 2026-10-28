@@ -1,21 +1,21 @@
 package main
 
 import (
-	"github.com/winezer0/xutils/logging"
 	"os"
 
-	"github.com/winezer0/downutils/downutils"
+	"github.com/winezer0/downutils"
+	"github.com/winezer0/slogs"
 )
 
 func main() {
 	// 打印命令行输入配置
 	opts, _ := InitOptionsArgs(1)
-	defer logging.Sync()
+	defer slogs.CloseAll()
 
 	// 加载并验证配置文件
 	downConfig, err := downutils.LoadConfig(opts.ConfigFile)
 	if err != nil {
-		logging.Errorf("failed to load config: %v", err)
+		slogs.Errorf("failed to load config: %v", err)
 		os.Exit(1)
 	}
 
@@ -39,7 +39,7 @@ func main() {
 	// 执行下载流程
 	result, err := downutils.ExecuteDownloads(downOptions, downConfig)
 	if err != nil {
-		logging.Errorf("download failed: %v", err)
+		slogs.Errorf("download failed: %v", err)
 		os.Exit(1)
 	}
 

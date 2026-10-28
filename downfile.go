@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/schollz/progressbar/v3"
 	"io"
 	"net/http"
 	"os"
@@ -14,7 +13,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/winezer0/xutils/logging"
+	"github.com/schollz/progressbar/v3"
+
+	"github.com/winezer0/slogs"
 )
 
 // classifyError 对错误进行分类，返回 DownloadError
@@ -103,7 +104,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	if existingTempFile != "" && !taskConfig.DisableResume {
 		info, statErr := os.Stat(existingTempFile)
 		if statErr == nil && info.Size() > 0 {
-			logging.Infof("found incomplete file %s, resuming download from %d bytes", existingTempFile, info.Size())
+			slogs.Infof("found incomplete file %s, resuming download from %d bytes", existingTempFile, info.Size())
 			downloadedBytes = info.Size()
 			outFile, err = os.OpenFile(existingTempFile, os.O_APPEND|os.O_WRONLY, 0644)
 			tempFile = existingTempFile
@@ -127,13 +128,13 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	defer func() {
 		if !fileClosed {
 			if err := outFile.Close(); err != nil {
-				logging.Warnf("failed to close file: %v", err)
+				slogs.Warnf("failed to close file: %v", err)
 			}
 			fileClosed = true
 		}
 		if !downloadSuccess {
 			// 下载失败，保留临时文件以便后续续传
-			logging.Infof("download failed, keeping temp file %s for resume", tempFile)
+			slogs.Infof("download failed, keeping temp file %s for resume", tempFile)
 		}
 	}()
 
@@ -155,10 +156,10 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 
 	// 如果发生了降级(从断点续传降级为完整下载)，需要重置文件
 	if actualDownloadedBytes != downloadedBytes {
-		logging.Infof("resume failed, falling back to full download")
+		slogs.Infof("resume failed, falling back to full download")
 		// 关闭当前文件并重新创建
 		if err := outFile.Close(); err != nil {
-			logging.Warnf("failed to close file before fallback: %v", err)
+			slogs.Warnf("failed to close file before fallback: %v", err)
 		}
 		outFile, err = os.Create(tempFile)
 		if err != nil {
@@ -270,7 +271,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 				Type:    ErrChecksumMismatch,
 			}
 		}
-		logging.Infof("file size verification passed: %d bytes", actualSize)
+		slogs.Infof("file size verification passed: %d bytes", actualSize)
 	}
 
 	// 验证文件校验值(如果配置了)
@@ -287,7 +288,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 				Type: ErrChecksumMismatch,
 			}
 		}
-		logging.Infof("file checksum verification passed: %s:%s", parsedChecksum.Type, actual)
+		slogs.Infof("file checksum verification passed: %s:%s", parsedChecksum.Type, actual)
 	}
 
 	return nil
@@ -324,14 +325,14 @@ func downloadWithResumeFallback(ctx context.Context, client *http.Client, downlo
 		if ctx.Err() != nil {
 			return nil, 0, ctx.Err()
 		}
-		logging.Warnf("failed to check server range support, falling back to full download: %v", err)
+		slogs.Warnf("failed to check server range support, falling back to full download: %v", err)
 		return nil, 0, nil // 返回nil响应，由调用方处理
 	}
 
 	// 检查 Accept-Ranges 头
 	acceptRanges := checkResp.Header.Get("Accept-Ranges")
 	if acceptRanges != "bytes" {
-		logging.Warnf("server does not support range requests (Accept-Ranges: %s), falling back to full download", acceptRanges)
+		slogs.Warnf("server does not support range requests (Accept-Ranges: %s), falling back to full download", acceptRanges)
 		checkResp.Body.Close()
 		return nil, 0, nil
 	}
@@ -343,7 +344,7 @@ func downloadWithResumeFallback(ctx context.Context, client *http.Client, downlo
 		if ctx.Err() != nil {
 			return nil, 0, ctx.Err()
 		}
-		logging.Warnf("resume request failed, falling back to full download: %v", err)
+		slogs.Warnf("resume request failed, falling back to full download: %v", err)
 		return nil, 0, nil
 	}
 
@@ -355,11 +356,11 @@ func downloadWithResumeFallback(ctx context.Context, client *http.Client, downlo
 
 	if resp.StatusCode == http.StatusOK {
 		// 服务器返回完整文件，说明续传失败(可能文件已变更)
-		logging.Warnf("server returned 200 OK instead of 206, file may have changed, falling back to full download")
+		slogs.Warnf("server returned 200 OK instead of 206, file may have changed, falling back to full download")
 		return resp, 0, nil
 	}
 
 	// 其他错误状态码
-	logging.Warnf("resume request returned status %d, falling back to full download", resp.StatusCode)
+	slogs.Warnf("resume request returned status %d, falling back to full download", resp.StatusCode)
 	return resp, 0, nil
 }

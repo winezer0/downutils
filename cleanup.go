@@ -2,8 +2,9 @@ package downutils
 
 import (
 	"fmt"
-	"github.com/winezer0/xutils/logging"
 	"os"
+
+	"github.com/winezer0/slogs"
 )
 
 // cleanupIncompleteDownloads 清理下载目录下未完成的下载文件(以 .download 结尾的文件)
@@ -20,7 +21,7 @@ func cleanupIncompleteDownloads(downloadDir string) error {
 	// 删除每个文件
 	for _, file := range files {
 		if err := os.Remove(file); err != nil {
-			logging.Warnf("failed to delete incomplete download file %s: %v", file, err)
+			slogs.Warnf("failed to delete incomplete download file %s: %v", file, err)
 		}
 	}
 	return nil
@@ -31,9 +32,9 @@ func cleanupAllIncompleteDownloads(config DownConfig, outputForce string) {
 	dirs := collectConfigDirs(config, outputForce)
 	for _, dir := range dirs {
 		if err := cleanupIncompleteDownloads(dir); err != nil {
-			logging.Warnf("failed to cleanup incomplete downloads in %s: %v", dir, err)
+			slogs.Warnf("failed to cleanup incomplete downloads in %s: %v", dir, err)
 		} else {
-			logging.Infof("cleaned up incomplete downloads in %s", dir)
+			slogs.Infof("cleaned up incomplete downloads in %s", dir)
 		}
 	}
 }

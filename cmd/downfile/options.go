@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jessevdk/go-flags"
-	"github.com/winezer0/xutils/logging"
+	"github.com/winezer0/slogs"
 	"os"
 )
 
@@ -73,19 +73,19 @@ func InitOptionsArgs(minimumParams int) (*Options, *flags.Parser) {
 	}
 
 	// 初始化日志器
-	logCfg := logging.NewLogConfig(opts.LogLevel, opts.LogFile, opts.ConsoleFormat)
-	if err := logging.InitDefaultLogger(logCfg); err != nil {
+	logCfg := slogs.NewConfig(opts.LogLevel, opts.LogFile, opts.ConsoleFormat)
+	if err := slogs.Init(logCfg); err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
 
 	if opts.ConfigFile == "" {
-		logging.Errorf("config file path is empty")
+		slogs.Errorf("config file path is empty")
 		os.Exit(1)
 	}
 
 	if !fileExists(opts.ConfigFile) {
-		logging.Errorf("config file not found: %s", opts.ConfigFile)
+		slogs.Errorf("config file not found: %s", opts.ConfigFile)
 	}
 
 	return opts, parser
@@ -99,20 +99,20 @@ func fileExists(filePath string) bool {
 
 // displayOptions 显示配置信息(用于日志记录)
 func displayOptions(options *Options) {
-	logging.Infof("Auto Download Tool %s", AppVersion)
+	slogs.Infof("Auto Download Tool %s", AppVersion)
 	if options.OutputForce != "" {
-		logging.Infof("Force output directory: %s", options.OutputForce)
+		slogs.Infof("Force output directory: %s", options.OutputForce)
 	}
-	logging.Infof("Download Proxy: %s", options.ProxyURL)
-	logging.Infof("Connect timeout: %ds", options.ConnectTimeout)
-	logging.Infof("Idle timeout: %ds", options.IdleTimeout)
-	logging.Infof("Retries: %d", options.Retries)
-	logging.Infof("Max concurrent: %d", options.MaxConcurrent)
+	slogs.Infof("Download Proxy: %s", options.ProxyURL)
+	slogs.Infof("Connect timeout: %ds", options.ConnectTimeout)
+	slogs.Infof("Idle timeout: %ds", options.IdleTimeout)
+	slogs.Infof("Retries: %d", options.Retries)
+	slogs.Infof("Max concurrent: %d", options.MaxConcurrent)
 	if options.MaxSpeed > 0 {
-		logging.Infof("Max speed: %d bytes/s", options.MaxSpeed)
+		slogs.Infof("Max speed: %d bytes/s", options.MaxSpeed)
 	} else {
-		logging.Infof("Max speed: unlimited")
+		slogs.Infof("Max speed: unlimited")
 	}
-	logging.Infof("Force update: %v", options.UpdateForce)
-	logging.Infof("Enable force: %v", options.EnableForce)
+	slogs.Infof("Force update: %v", options.UpdateForce)
+	slogs.Infof("Enable force: %v", options.EnableForce)
 }

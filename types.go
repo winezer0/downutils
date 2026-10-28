@@ -1,11 +1,12 @@
 package downutils
 
 import (
-	"github.com/winezer0/xutils/logging"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/winezer0/slogs"
 )
 
 // DownConfig 配置文件结构
@@ -147,7 +148,7 @@ func ParseKeepUpdated(keepUpdated string, fileModTime time.Time) bool {
 		hourStr := strings.TrimSuffix(strategy, "h")
 		hours, err := strconv.Atoi(hourStr)
 		if err != nil || hours <= 0 {
-			logging.Warnf("invalid hours value '%s' in keep-updated strategy, treating as disable", keepUpdated)
+			slogs.Warnf("invalid hours value '%s' in keep-updated strategy, treating as disable", keepUpdated)
 			return false
 		}
 
@@ -166,7 +167,7 @@ func ParseKeepUpdated(keepUpdated string, fileModTime time.Time) bool {
 		dayStr := strings.TrimSuffix(strategy, "d")
 		days, err := strconv.Atoi(dayStr)
 		if err != nil || days <= 0 {
-			logging.Warnf("invalid days value '%s' in keep-updated strategy, treating as disable", keepUpdated)
+			slogs.Warnf("invalid days value '%s' in keep-updated strategy, treating as disable", keepUpdated)
 			return false
 		}
 
@@ -181,7 +182,7 @@ func ParseKeepUpdated(keepUpdated string, fileModTime time.Time) bool {
 	}
 
 	// 无法识别的策略，输出警告并返回 false
-	logging.Warnf("unrecognized keep-updated strategy '%s', treating as disable", keepUpdated)
+	slogs.Warnf("unrecognized keep-updated strategy '%s', treating as disable", keepUpdated)
 	return false
 }
 

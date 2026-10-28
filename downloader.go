@@ -3,8 +3,9 @@ package downutils
 import (
 	"context"
 	"fmt"
-	"github.com/winezer0/xutils/logging"
 	"net/http"
+
+	"github.com/winezer0/slogs"
 )
 
 // TaskStatus 任务状态枚举
@@ -72,7 +73,7 @@ func ExecuteDownloadsContext(ctx context.Context, options *DownOptions, downConf
 	validationErrs := ValidateDownConfig(downConfig, options.EnableForce)
 	if len(validationErrs) > 0 {
 		for _, errMsg := range validationErrs {
-			logging.Errorf("config validation failed: %s", errMsg)
+			slogs.Errorf("config validation failed: %s", errMsg)
 		}
 		return nil, fmt.Errorf("config validation failed with %d errors", len(validationErrs))
 	}
@@ -129,7 +130,7 @@ func processAllConfigGroups(ctx context.Context, httpClient *http.Client, config
 			downItems = filterEnableItems(downItems)
 		}
 		if len(downItems) > 0 {
-			logging.Infof("Processing config group: %s", groupName)
+			slogs.Infof("Processing config group: %s", groupName)
 			taskInfos := processDownItems(ctx, httpClient, downItems, options)
 			result.TotalItems += len(downItems)
 			result.TaskInfos = append(result.TaskInfos, taskInfos...)
@@ -154,11 +155,11 @@ func processAllConfigGroups(ctx context.Context, httpClient *http.Client, config
 // DisplayDownloadResult 显示下载结果统计信息
 func DisplayDownloadResult(result *DownloadResult) {
 	if result == nil {
-		logging.Warn("download result is nil")
+		slogs.Warnf("download result is nil")
 		return
 	}
 
-	logging.Infof("Download completed: %d/%d items successful, %d skipped, %d failed",
+	slogs.Infof("Download completed: %d/%d items successful, %d skipped, %d failed",
 		result.SuccessItems, result.TotalItems, result.SkippedItems, result.FailedItems)
 
 	// 显示每个任务的详细信息
@@ -166,16 +167,16 @@ func DisplayDownloadResult(result *DownloadResult) {
 		switch info.Status {
 		case TaskStatusSuccess:
 			if info.Resumed {
-				logging.Infof("[SUCCESS] %s (%s) - resumed download", info.Module, info.FileName)
+				slogs.Infof("[SUCCESS] %s (%s) - resumed download", info.Module, info.FileName)
 			} else {
-				logging.Infof("[SUCCESS] %s (%s)", info.Module, info.FileName)
+				slogs.Infof("[SUCCESS] %s (%s)", info.Module, info.FileName)
 			}
 		case TaskStatusSkipped:
-			logging.Infof("[SKIPPED] %s (%s) - file exists and no update needed", info.Module, info.FileName)
+			slogs.Infof("[SKIPPED] %s (%s) - file exists and no update needed", info.Module, info.FileName)
 		case TaskStatusFailed:
-			logging.Errorf("[FAILED] %s (%s) - %s", info.Module, info.FileName, info.ErrorMsg)
+			slogs.Errorf("[FAILED] %s (%s) - %s", info.Module, info.FileName, info.ErrorMsg)
 		case TaskStatusConfigErr:
-			logging.Errorf("[CONFIG_ERR] %s (%s) - %s", info.Module, info.FileName, info.ErrorMsg)
+			slogs.Errorf("[CONFIG_ERR] %s (%s) - %s", info.Module, info.FileName, info.ErrorMsg)
 		}
 	}
 }
