@@ -204,11 +204,13 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 			// 执行下载
 			taskConfig := &DownloadTaskConfig{
 				ReadIdleTimeout: downOptions.ReadIdleTimeout,
+				module:          item.Module,
 				DisableResume:   downOptions.DisableResume,
 				Checksum:        item.Checksum,
 				CheckSize:       item.CheckSize,
 				MaxSize:         item.MaxSize,
 				ShowProgress:    downOptions.ShowProgress,
+				onProgress:      downOptions.OnProgress,
 				MaxSpeed:        downOptions.MaxSpeed,
 			}
 			if err := downloadFile(ctx, client, downloadURL, storePath, taskConfig); err != nil {

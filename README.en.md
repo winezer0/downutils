@@ -159,6 +159,15 @@ Use the context variants to propagate cancellation to HTTP requests, transfers, 
 
 Individual download failures and cancellations are reported in `DownloadResult.TaskInfos` and `FailedItems`; the returned top-level error can still be nil. Always inspect task results.
 
+Set `DownOptions.OnProgress` to receive byte progress. It runs synchronously in the goroutine performing the download, so keep the callback brief; with `MaxConcurrent > 1`, it may be called concurrently. `Total` is zero when the response size is unknown; for resumed downloads, `Downloaded` includes bytes already present in the partial file. It is called about every 100 ms and once at the start and end of each attempt. Use the task result to determine whether the download ultimately succeeded.
+
+```go
+options := downutils.NewDefaultDownOptions()
+options.OnProgress = func(p downutils.Progress) {
+    queueProgressUpdate(p)
+}
+```
+
 All batch entry points perform the same configuration and option validation. A custom client must be non-nil; the caller owns its idle connection cleanup.
 
 `ProcessDownItems(client, items, options)` is a lower-level single-group entry point. It validates options but does not perform batch task-field validation, enable filtering, or before/after cleanup, and it has no exported Context variant. Prefer the batch entry points for most integrations.
@@ -183,6 +192,7 @@ type DownOptions struct {
     UpdateForce    bool   // Ignore update policies
     EnableForce    bool   // Include disabled items
     ShowProgress   bool   // Allow terminal progress display; default true
+    OnProgress     func(Progress) // Synchronous progress callback; may be concurrent
     MaxRetries     int    // Total attempts per URL, including the first; default 3, at least 1
     MaxConcurrent  int    // Concurrency within each group; default 1; 0/1 means serial
     MaxSpeed       int64  // Per-download bytes/second; 0 means unlimited

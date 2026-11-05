@@ -213,6 +213,20 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 			}
 		}()
 	}
+	var callbackWriter *downloadProgressWriter
+	if taskConfig.onProgress != nil {
+		total := fileSize
+		if total < 0 {
+			total = 0
+		}
+		callbackWriter = newDownloadProgressWriter(writer, Progress{
+			Module:     taskConfig.module,
+			FileName:   fileName,
+			Downloaded: downloadedBytes,
+			Total:      total,
+		}, taskConfig.onProgress)
+		writer = callbackWriter
+	}
 
 	// 应用下载速度限制
 	var reader io.Reader = resp.Body
@@ -226,6 +240,9 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	// 复制内容，支持context取消
 	buf := make([]byte, DownloadBufferSize)
 	written, err := copyWithContext(ctx, writer, reader, buf)
+	if callbackWriter != nil {
+		callbackWriter.report()
+	}
 
 	// 检查是否是因为context取消导致的错误
 	if ctx.Err() != nil {

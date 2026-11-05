@@ -190,6 +190,15 @@ func ExecuteDownloadsWithClientContext(ctx context.Context, options *DownOptions
 
 单项下载失败或取消通过 `DownloadResult.TaskInfos` 与 `FailedItems` 返回，顶层 `error` 可能仍为 `nil`，调用者应检查任务结果。`DownItem.MaxSize`（YAML：`max-size`）可限制最大文件字节数，包含未提供 Content-Length 的响应。URL 内容可能变化时，设置 `DownOptions.DisableResume = true`，每次尝试重新下载，避免拼接不同版本的数据。
 
+可通过 `DownOptions.OnProgress` 接收下载字节进度。回调在执行下载的 goroutine 中同步运行，处理应尽量简短；`MaxConcurrent > 1` 时可能并发调用。`Total` 为 0 表示大小未知，续传时 `Downloaded` 包含已有的部分文件字节数。回调约每 100 毫秒触发一次，并在每次尝试开始和结束时触发；最终成功与否仍以任务结果为准。
+
+```go
+options := downutils.NewDefaultDownOptions()
+options.OnProgress = func(p downutils.Progress) {
+    queueProgressUpdate(p)
+}
+```
+
 所有批量入口执行相同的配置和选项验证。自定义客户端必须非空，由调用方负责关闭空闲连接。
 
 `options == nil` 使用默认选项。`ProcessDownItems(client, items, options)` 是较低层的单组入口：它验证选项，但不会执行批量入口的任务字段验证、enable 过滤和前后清理，也没有公开的 Context 变体；通常应优先使用上述批量入口。
@@ -215,6 +224,7 @@ type DownOptions struct {
     UpdateForce    bool   // 强制更新（忽略 KeepUpdated 策略）
     EnableForce    bool   // 强制启用（忽略 Enable 字段）
     ShowProgress   bool   // 允许终端进度显示（默认 true）
+    OnProgress     func(Progress) // 同步进度回调；并发下载时可能并发调用
     MaxRetries     int    // 每个 URL 的总尝试次数，含首次（默认 3，至少为 1）
     MaxConcurrent  int    // 每组最大并发数（默认 1，0/1 均为串行）
     MaxSpeed       int64  // 每个下载的最大速度（字节/秒，0 表示不限速）
