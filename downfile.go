@@ -80,6 +80,10 @@ func classifyError(err error, statusCode int) error {
 func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePath string, taskConfig *DownloadTaskConfig) error {
 	ctx, cancelRead := context.WithCancelCause(ctx)
 	defer cancelRead(nil)
+	parsedChecksum, checksumErr := resolveChecksum(ctx, client, taskConfig.Checksum, downloadUrl)
+	if checksumErr != nil {
+		return checksumErr
+	}
 	taskConfig.resumed = false
 	// 创建目标文件的目录(如果不存在)
 	if err := os.MkdirAll(filepath.Dir(storePath), 0755); err != nil {
@@ -280,7 +284,6 @@ func downloadFile(ctx context.Context, client *http.Client, downloadUrl, storePa
 	}
 
 	// 验证文件校验值(如果配置了)
-	parsedChecksum := parseChecksum(taskConfig.Checksum)
 	if parsedChecksum.Enable {
 		match, actual, verifyErr := verifyFileChecksum(tempFile, parsedChecksum)
 		if verifyErr != nil {

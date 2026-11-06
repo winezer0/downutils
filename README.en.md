@@ -118,16 +118,18 @@ Empty or unrecognized values disable updates. Missing destination files are stil
 
 ### Checksums (`checksum`)
 
-Use `algorithm:value`. Without a prefix, MD5 is used. The values below are placeholders for actual checksums.
+Use `algorithm:value`. Without a prefix, a literal digest uses MD5. A checksum can also be fetched from a fixed HTTP(S) URL. The values below are placeholders.
 
 ```yaml
 checksum: "md5:abc123"
 checksum: "sha1:abc123"
 checksum: "sha256:abc123"
 checksum: "abc123" # MD5 by default
+checksum: "sha256:https://example.com/SHA256SUMS"
+checksum: "https://example.com/SHA256SUMS" # infer algorithm from digest length
 ```
 
-Empty values disable verification. Algorithm names are case-insensitive. An unknown algorithm produces a warning and falls back to MD5; an empty digest disables verification. Configuration validation does not check digest length or hexadecimal syntax.
+Empty values disable verification and do not trigger a checksum request. A URL can be used directly or after an `md5:`, `sha1:`, or `sha256:` prefix. The response may contain a single hexadecimal digest or standard checksum lines such as `digest  filename` / `digest *filename`. For a manifest, downutils matches the basename from the actual download URL. An unprefixed URL infers MD5, SHA1, or SHA256 from the digest length; a prefixed URL requires that algorithm. Checksum responses are limited to 1 MiB. Checksum requests use the same HTTP client and `ProxyURL` or environment proxy configuration as the artifact download. A failed request, missing manifest entry, malformed digest, or mismatch fails the download before the target file is replaced. Algorithm names are case-insensitive. An unknown literal algorithm produces a warning and falls back to MD5; an empty digest disables verification.
 
 ### File size (`check-size`)
 
@@ -318,12 +320,13 @@ const (
     ErrPermissionDenied    = "PERMISSION_DENIED"
     ErrTimeout             = "TIMEOUT"
     ErrChecksumMismatch    = "CHECKSUM_MISMATCH"
+    ErrChecksumSourceFailed = "CHECKSUM_SOURCE_FAILED"
     ErrMaximumSizeExceeded = "MAXIMUM_SIZE_EXCEEDED"
     ErrCreateTempFile      = "CREATE_TEMP_FILE_FAILED"
 )
 ```
 
-Checksum and exact size failures use `ErrChecksumMismatch`; exceeding `max-size` uses `ErrMaximumSizeExceeded`. Batch results expose task failures through status and error message fields.
+Checksum and exact size failures use `ErrChecksumMismatch`; a checksum URL request or response failure uses `ErrChecksumSourceFailed`; exceeding `max-size` uses `ErrMaximumSizeExceeded`. Batch results expose task failures through status and error message fields.
 
 These constants describe internal classification; not every error is converted to DownloadError. Disk-full classification uses platform-native errors and errors.Is through wrappers: ERROR_DISK_FULL / ERROR_HANDLE_DISK_FULL on Windows, and ENOSPC / EDQUOT (quota exhaustion) on Linux/macOS. Batch results retain status and error text, not an original error for errors.As.
 

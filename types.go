@@ -30,7 +30,7 @@ type DownItem struct {
 	KeepUpdated  string   `yaml:"keep-updated" json:"keepUpdated"`   // 文件存在时的更新策略: disable/no/false-不更新, enable/yes/true-总是更新, 1h/24h/72h-指定小时后更新, 1d/7d-指定天后更新
 	StorageDir   string   `yaml:"storage-dir" json:"storageDir"`     // 自定义存储目录，为空时使用默认目录
 	Enable       bool     `yaml:"enable" json:"enable"`              // 是否开启任务 对于未开启的任务需要进行过滤
-	Checksum     string   `yaml:"checksum" json:"checksum"`          // 文件校验值，格式：md5:xxx/sha1:xxx/sha256:xxx，前缀为空时默认使用md5算法
+	Checksum     string   `yaml:"checksum" json:"checksum"`          // 校验摘要或固定HTTP(S)校验文件URL
 	CheckSize    string   `yaml:"check-size" json:"checkSize"`       // 文件大小校验，格式：1KB/1MB/1GB，为空或0时不校验文件大小
 	MaxSize      int64    `yaml:"max-size" json:"maxSize"`           // 最大允许下载文件大小，0表示不限制
 }
@@ -65,7 +65,7 @@ type DownloadTaskConfig struct {
 	resumed         bool
 	module          string
 	DisableResume   bool   // Restart instead of appending incomplete download data.
-	Checksum        string // 文件校验值
+	Checksum        string // 校验摘要或固定HTTP(S)校验文件URL
 	CheckSize       string // 文件大小校验
 	MaxSize         int64  // Maximum allowed download size; zero disables the limit.
 	ShowProgress    bool   // 是否显示进度条
@@ -130,8 +130,9 @@ const (
 	// ErrTimeout 超时错误
 	ErrTimeout = "TIMEOUT"
 	// ErrChecksumMismatch 文件校验值或大小不匹配
-	ErrChecksumMismatch    = "CHECKSUM_MISMATCH"
-	ErrMaximumSizeExceeded = "MAXIMUM_SIZE_EXCEEDED"
+	ErrChecksumMismatch     = "CHECKSUM_MISMATCH"
+	ErrChecksumSourceFailed = "CHECKSUM_SOURCE_FAILED"
+	ErrMaximumSizeExceeded  = "MAXIMUM_SIZE_EXCEEDED"
 	// ErrCreateTempFile 创建临时文件失败
 	ErrCreateTempFile = "CREATE_TEMP_FILE_FAILED"
 )

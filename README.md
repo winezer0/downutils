@@ -123,6 +123,8 @@ group_name:  # 配置组名称，用于日志输出
 
 ### 文件校验 (checksum)
 
+`checksum` 也可填写固定的 HTTP(S) 校验文件地址；可直接填写 URL，或使用 `md5:<url>`、`sha1:<url>`、`sha256:<url>` 指定算法。值为空时不请求校验文件。远端内容支持单个十六进制摘要，或 `摘要  文件名` / `摘要 *文件名` 格式的标准清单；清单按实际下载 URL 的文件名匹配。裸 URL 根据摘要长度识别 MD5、SHA1 或 SHA256。校验文件请求复用同一 HTTP 客户端及 `ProxyURL`/环境代理配置。请求失败、摘要缺失或不匹配时，下载失败且不会替换目标文件。
+
 格式：`算法:校验值`，算法为空时默认使用 MD5
 
 下面的校验值仅为格式示例，使用时须替换为实际文件的完整校验值。
@@ -132,6 +134,10 @@ checksum: "md5:abc123"        # MD5 校验
 checksum: "sha1:abc123"       # SHA1 校验
 checksum: "sha256:abc123"     # SHA256 校验
 checksum: "abc123"            # 默认使用 MD5
+checksum: "md5:https://example.com/MD5SUMS"
+checksum: "sha1:https://example.com/SHA1SUMS"
+checksum: "sha256:https://example.com/SHA256SUMS"
+checksum: "https://example.com/SHA256SUMS" # 根据摘要长度识别算法
 ```
 
 空值关闭校验；算法名不区分大小写。未知算法会警告并按 MD5 处理，算法后没有校验值则关闭校验；当前配置验证不检查摘要长度或十六进制格式。
@@ -393,7 +399,7 @@ result, err := downutils.ExecuteDownloads(options, config)
 
 ## 错误处理
 
-`DownloadError` 包含 `StatusCode`、`Message` 和 `Type`。校验和或精确大小不符使用 ErrChecksumMismatch，超过 max-size 使用 ErrMaximumSizeExceeded。错误类型常量包括：
+`DownloadError` 包含 `StatusCode`、`Message` 和 `Type`。校验和或精确大小不符使用 ErrChecksumMismatch，校验文件获取失败使用 ErrChecksumSourceFailed，超过 max-size 使用 ErrMaximumSizeExceeded。错误类型常量包括：
 
 ```go
 const (
@@ -404,6 +410,7 @@ const (
     ErrPermissionDenied   = "PERMISSION_DENIED"    // 权限不足
     ErrTimeout            = "TIMEOUT"              // 超时
     ErrChecksumMismatch   = "CHECKSUM_MISMATCH"    // 校验失败
+    ErrChecksumSourceFailed = "CHECKSUM_SOURCE_FAILED" // 校验文件获取失败
     ErrMaximumSizeExceeded = "MAXIMUM_SIZE_EXCEEDED" // 超过最大文件大小
     ErrCreateTempFile     = "CREATE_TEMP_FILE_FAILED" // 创建临时文件失败
 )

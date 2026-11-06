@@ -13,16 +13,19 @@ func TestParseChecksum(t *testing.T) {
 		input      string
 		wantType   ChecksumType
 		wantValue  string
+		wantURL    string
 		wantEnable bool
 	}{
-		{"empty string", "", "", "", false},
-		{"md5 prefix", "md5:abc123", ChecksumMD5, "abc123", true},
-		{"sha1 prefix", "sha1:def456", ChecksumSHA1, "def456", true},
-		{"sha256 prefix", "sha256:ghi789", ChecksumSHA256, "ghi789", true},
-		{"no prefix defaults to md5", "jkl012", ChecksumMD5, "jkl012", true},
-		{"unknown type treated as md5", "crc32:mno345", ChecksumMD5, "mno345", true},
-		{"case insensitive", "MD5:ABC123", ChecksumMD5, "ABC123", true},
-		{"empty value disabled", "md5:", "", "", false},
+		{name: "empty string", input: "", wantEnable: false},
+		{name: "md5 prefix", input: "md5:abc123", wantType: ChecksumMD5, wantValue: "abc123", wantEnable: true},
+		{name: "sha1 prefix", input: "sha1:def456", wantType: ChecksumSHA1, wantValue: "def456", wantEnable: true},
+		{name: "sha256 prefix", input: "sha256:ghi789", wantType: ChecksumSHA256, wantValue: "ghi789", wantEnable: true},
+		{name: "no prefix defaults to md5", input: "jkl012", wantType: ChecksumMD5, wantValue: "jkl012", wantEnable: true},
+		{name: "unknown type treated as md5", input: "crc32:mno345", wantType: ChecksumMD5, wantValue: "mno345", wantEnable: true},
+		{name: "case insensitive", input: "MD5:ABC123", wantType: ChecksumMD5, wantValue: "ABC123", wantEnable: true},
+		{name: "empty value disabled", input: "md5:", wantEnable: false},
+		{name: "bare URL", input: "https://example.test/SHA256SUMS", wantURL: "https://example.test/SHA256SUMS", wantEnable: true},
+		{name: "prefixed URL", input: "SHA256:https://example.test/SHA256SUMS", wantType: ChecksumSHA256, wantURL: "https://example.test/SHA256SUMS", wantEnable: true},
 	}
 
 	for _, tt := range tests {
@@ -36,6 +39,9 @@ func TestParseChecksum(t *testing.T) {
 			}
 			if got.Enable && got.Value != tt.wantValue {
 				t.Errorf("parseChecksum(%q).Value = %v, want %v", tt.input, got.Value, tt.wantValue)
+			}
+			if got.URL != tt.wantURL {
+				t.Errorf("parseChecksum(%q).URL = %v, want %v", tt.input, got.URL, tt.wantURL)
 			}
 		})
 	}

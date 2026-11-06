@@ -255,6 +255,8 @@ func processSingleItem(parentCtx context.Context, client *http.Client, item Down
 
 					case ErrChecksumMismatch:
 						slogs.Warnf("checksum/size verification failed for URL: %s", downloadURL)
+					case ErrChecksumSourceFailed:
+						slogs.Warnf("checksum source failed for %s: %s", item.Module, taskInfo.ErrorMsg)
 
 					default:
 						slogs.Warnf("unknown error type: %s", downloadErr.Type)

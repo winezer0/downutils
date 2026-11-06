@@ -27,6 +27,7 @@ const (
 type ParsedChecksum struct {
 	Type   ChecksumType
 	Value  string
+	URL    string
 	Enable bool
 }
 
@@ -37,11 +38,15 @@ type ParsedCheckSize struct {
 }
 
 // parseChecksum 解析校验值字符串
-// 格式：md5:xxx/sha1:xxx/sha256:xxx，前缀为空时默认使用md5算法
+// 支持字面摘要和HTTP(S)校验URL；字面摘要前缀为空时默认使用md5算法。
 // 返回解析后的校验类型和值，以及是否启用校验
 func parseChecksum(checksum string) ParsedChecksum {
-	if strings.TrimSpace(checksum) == "" {
+	checksum = strings.TrimSpace(checksum)
+	if checksum == "" {
 		return ParsedChecksum{Enable: false}
+	}
+	if isChecksumURL(checksum) {
+		return ParsedChecksum{URL: checksum, Enable: true}
 	}
 
 	// 检查是否包含前缀
@@ -50,6 +55,12 @@ func parseChecksum(checksum string) ParsedChecksum {
 		// 包含前缀
 		checkType := ChecksumType(strings.ToLower(strings.TrimSpace(parts[0])))
 		value := strings.TrimSpace(parts[1])
+		if isChecksumURL(value) {
+			switch checkType {
+			case ChecksumMD5, ChecksumSHA1, ChecksumSHA256:
+				return ParsedChecksum{Type: checkType, URL: value, Enable: true}
+			}
+		}
 
 		// 验证校验类型
 		switch checkType {
